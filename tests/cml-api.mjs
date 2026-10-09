@@ -47,3 +47,21 @@ test('browser fetch downloads an export with its global receiver', async () => {
     else globalThis.document = originalDocument;
   }
 });
+
+test('project download sends the JSON snapshot by POST with the browser receiver', async () => {
+  const originalFetch = globalThis.fetch, originalDocument = globalThis.document;
+  const calls = [], link = { click() {} };
+  globalThis.fetch = browserFetch({ ok: true, headers: new Headers(), blob: async () => new Blob(['project']) }, calls);
+  globalThis.document = { createElement: () => link };
+  const body = { spec: { dataset_id: 'snapshot', preprocessing: { declarative_pipeline: { source: 'pipeline = StandardScaler()' } } } };
+  try {
+    await new ApiClient().download('/cml/project-exports?format=py', 'project.py', { method: 'POST', body });
+    assert.equal(calls[0].options.method, 'POST');
+    assert.equal(calls[0].options.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(calls[0].options.body), body);
+    assert.equal(link.download, 'project.py');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalDocument === undefined) delete globalThis.document; else globalThis.document = originalDocument;
+  }
+});

@@ -1,6 +1,9 @@
 import { element, id } from './dom.js';
 
-export function lessonUrl(lessonId) { return `/lesson?id=${encodeURIComponent(lessonId || '01-prediction')}`; }
+export function lessonUrl(lessonId) {
+  const [lesson, anchor] = String(lessonId || '01-prediction').split('#');
+  return `/lesson?id=${encodeURIComponent(lesson)}${anchor ? '#' + encodeURIComponent(anchor) : ''}`;
+}
 
 export function helpButton({ label, help, lesson_id, lessonId, help_key, helpKey } = {}) {
   const panelId = id('help');

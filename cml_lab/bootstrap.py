@@ -61,9 +61,11 @@ def build_services(root=None):
     algorithms=AlgorithmCatalogue()
     preparation_catalogue=PreparationCatalogue()
     metrics=TaskMetrics()
+    from .infrastructure.ml.pipelines import pipeline_catalogue
     preparation=PreparationApplication(PreparationPreviewGateway(gateway,algorithms))
     learning=LearningService(InMemoryLearningRepository(algorithms=algorithms.catalogue(),
-        stages=preparation_catalogue.stages()+preparation_catalogue.samplers(),metrics=metrics.catalogue()))
+        stages=preparation_catalogue.stages()+preparation_catalogue.samplers(),metrics=metrics.catalogue(),
+        pipeline_classes=pipeline_catalogue()['classes']))
     resolver=ExperimentResolver(gateway,recipes_repository,algorithms)
     policy=ConfigurationPolicy(algorithms,preparation,metrics,resolver)
     scheduler=ProcessScheduler(root,runs_repository)

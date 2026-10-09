@@ -15,23 +15,24 @@ from typing import Any
 import numpy as np
 
 from linear_lab.models import ModelRegistry
+from .hyperparameters import (constructor_defaults, json_value, parameter_schema, validate_json)
 
 
 TASKS = ("regression", "classification", "clustering", "ranking", "forecasting",
          "panel", "anomaly", "reduction")
 REGRESSION_TASKS = ("regression", "forecasting", "panel")
 FAMILY_LABELS = {
-    "linear": "Линейные модели", "regularization": "Регуляризация",
-    "robust": "Устойчивые модели", "tree": "Деревья", "forest": "Леса",
-    "boosting": "Бустинг", "ensemble": "Ансамбли", "neighbors": "Соседи",
-    "svm": "Метод опорных векторов", "kernel": "Ядерные модели",
-    "naive_bayes": "Наивный Байес", "discriminant": "Дискриминантный анализ",
-    "gaussian_process": "Гауссовские процессы", "baseline": "Контрольный ответ",
-    "centroid": "Центры групп", "density": "Плотность",
-    "hierarchy": "Иерархия групп", "graph": "Графовые методы",
-    "mixture": "Смеси распределений", "decomposition": "Разложение матрицы",
-    "manifold": "Многообразия", "projection": "Случайные проекции",
-    "anomaly": "Поиск аномалий", "neural_network": "Нейронные сети sklearn",
+    "linear": "Linear models", "regularization": "Regularized linear models",
+    "robust": "Robust regression", "tree": "Decision trees", "forest": "Random forests",
+    "boosting": "Boosting", "ensemble": "Ensemble methods", "neighbors": "Nearest neighbors",
+    "svm": "Support vector machines", "kernel": "Kernel methods",
+    "naive_bayes": "Naive Bayes", "discriminant": "Discriminant analysis",
+    "gaussian_process": "Gaussian processes", "baseline": "Dummy estimators",
+    "centroid": "Centroid clustering", "density": "Density-based clustering",
+    "hierarchy": "Hierarchical clustering", "graph": "Graph-based clustering",
+    "mixture": "Gaussian mixtures", "decomposition": "Matrix decomposition",
+    "manifold": "Manifold learning", "projection": "Random projection",
+    "anomaly": "Outlier detection", "neural_network": "Neural networks",
 }
 FAMILY_LESSONS = {
     "linear": "classification-basics", "regularization": "06-ridge",
@@ -163,6 +164,8 @@ class AlgorithmCatalogue:
         self._entries: dict[str, _Algorithm] = {}
         self._import_failures: dict[str, str] = {}
         self._optional_checked: set[str] = set()
+        self._parameter_cache: dict[str, dict] = {}
+        self._legacy_class_cache: dict[str, tuple] = {}
         self._register_sklearn()
         self._register_boosting()
 
@@ -201,7 +204,7 @@ class AlgorithmCatalogue:
                       "catboost": "https://catboost.ai/docs/en/concepts/python-reference_" + class_name.lower(),
                   }[library])
         self._entries[algorithm_id] = _Algorithm({
-            "id": algorithm_id, "name": name, "family": family,
+            "id": algorithm_id, "name": class_name, "class_path": class_path, "family": family,
             "family_label": FAMILY_LABELS[family], "tasks": list(tasks),
             "library": library, "description": description, "params": schema,
             "capabilities": caps, "lesson_id": lesson, "source": source,
@@ -653,10 +656,44 @@ class AlgorithmCatalogue:
             "l0": "19-nonconvex", "scad": "19-nonconvex", "mcp": "19-nonconvex", "sqrt_lasso": "19-nonconvex",
             "linear_svr": "31-linear-svr", "weighted_lasso": "32-weighted-lasso",
         }.get(algorithm_id, "03-least-squares")
-        for field in item["params"]:
-            field["help_key"] = f"model.{algorithm_id}.{field['key']}"
-            field["lesson_id"] = item["lesson_id"]
-        return item
+        cls, profile = self._legacy_constructor(algorithm_id)
+        item["name"] = cls.__name__
+        item["library"] = cls.__module__.split(".", 1)[0]
+        item["class_path"] = self._public_class_path(cls)
+        if cls.__module__.startswith("sklearn"):
+            item["source"] = f"https://scikit-learn.org/1.8/modules/generated/{item['class_path']}.html"
+        return self._complete_schema(algorithm_id, item, cls, profile)
+
+    @staticmethod
+    def _public_class_path(cls):
+        if cls.__module__.startswith("sklearn"):
+            parts = cls.__module__.split(".")
+            if parts[1] == "gaussian_process" and len(parts) > 2 and parts[2] == "kernels":
+                return "sklearn.gaussian_process.kernels." + cls.__name__
+            return ".".join(parts[:2]) + "." + cls.__name__
+        return cls.__module__ + "." + cls.__name__
+
+    def _legacy_constructor(self, algorithm_id):
+        if algorithm_id not in self._legacy_class_cache:
+            spec = self._legacy.spec(algorithm_id)
+            parameters = {field["key"]: deepcopy(field["default"]) for field in spec["params"]}
+            estimator = self._legacy.create(algorithm_id, parameters, seed=42)
+            self._legacy_class_cache[algorithm_id] = (type(estimator), estimator.get_params(deep=False))
+        cls, profile = self._legacy_class_cache[algorithm_id]
+        return cls, deepcopy(profile)
+
+    def _complete_schema(self, algorithm_id, item, cls, profile):
+        if algorithm_id not in self._parameter_cache:
+            full = deepcopy(item)
+            full["params"] = parameter_schema(cls, algorithm_id, item["params"], profile, item["source"])
+            full["lesson_id"] = f"model-{algorithm_id}"
+            full["constructor"] = cls.__name__
+            full["parameter_count"] = len(full["params"])
+            self._parameter_cache[algorithm_id] = full
+        full = deepcopy(self._parameter_cache[algorithm_id])
+        if "available" in item:
+            full.update(available=item["available"], reason=item.get("reason"))
+        return full
 
     def descriptor(self, algorithm_id: str) -> dict:
         if not isinstance(algorithm_id, str) or not algorithm_id or len(algorithm_id) > 100:
@@ -675,7 +712,43 @@ class AlgorithmCatalogue:
         failure = self._import_failures.get(library)
         item["available"] = installed and failure is None
         item["reason"] = failure or (None if installed else f"Установите дополнение {library} для этого алгоритма.")
+        if item["available"]:
+            entry = self._entries[algorithm_id]
+            module_name, class_name = entry.class_path.rsplit(".", 1)
+            cls = getattr(import_module(module_name), class_name)
+            profile = self._profile_defaults(entry, cls)
+            return self._complete_schema(algorithm_id, item, cls, profile)
+        for field in item["params"]:
+            field["label"] = field["key"]
         return item
+
+    @staticmethod
+    def effective_capabilities(estimator, spec=None) -> dict:
+        """Configured estimator methods and input tags, not default-class claims.
+
+        ``spec`` may be the full algorithm descriptor or an existing capability
+        dictionary. Existing domain/resource restrictions survive this update.
+        """
+        from sklearn.utils import get_tags
+        caps = deepcopy((spec or {}).get("capabilities", spec or {}))
+        for method in ("predict", "predict_proba", "decision_function", "fit_predict",
+                       "partial_fit", "staged_predict", "transform"):
+            caps[method] = hasattr(estimator, method)
+        caps["transductive"] = not caps["predict"] and not caps["transform"]
+        caps["coefficients"] = caps.get("coefficients", False)
+        caps["feature_importance"] = caps.get("feature_importance", False)
+        try:
+            tags = get_tags(estimator).input_tags
+            caps["requires_dense"] = not tags.sparse
+            caps["allows_missing"] = tags.allow_nan
+        except (AttributeError, TypeError):
+            # Third-party wrappers without complete tags retain catalogue limits.
+            pass
+        if type(estimator).__name__ == "KernelPCA" and not getattr(estimator, "fit_inverse_transform", False):
+            caps["inverse_transform"] = False
+        else:
+            caps["inverse_transform"] = hasattr(estimator, "inverse_transform")
+        return caps
 
     def spec(self, algorithm_id: str) -> dict:
         return self.descriptor(algorithm_id)
@@ -711,48 +784,294 @@ class AlgorithmCatalogue:
             raise ValueError(f"Алгоритм {spec['name']} не поддерживает задачу {task}.")
         if not spec["available"]:
             raise ValueError(spec["reason"])
-        validated = self._validate(spec, params)
+        requested = self._migrate_params(algorithm_id, params)
+        validated = self._validate(spec, requested)
         if algorithm_id not in self._entries:
-            estimator = self._legacy.create(algorithm_id, validated, seed=int(seed))
-            if "n_jobs" in estimator.get_params(deep=False):
-                estimator.set_params(n_jobs=int(n_jobs))
-            return estimator
-        entry = self._entries[algorithm_id]
-        module_name, class_name = entry.class_path.rsplit(".", 1)
-        try:
-            cls = getattr(import_module(module_name), class_name)
-        except (ImportError, OSError) as exc:
-            reason = f"Библиотека {spec['library']} не загрузилась: {exc}. Проверьте установку нативных зависимостей."
-            self._import_failures[spec["library"]] = reason
-            raise ValueError(reason) from exc
-        constructor = self._normalize(entry, validated)
-        if entry.factory == "ensemble":
-            constructor = self._ensemble_params(task, algorithm_id, validated, seed, ancestors, depth)
-        elif entry.factory == "gaussian_process":
-            from sklearn.gaussian_process.kernels import DotProduct, Matern, RBF
-            constructor["kernel"] = {"rbf": RBF, "matern": Matern, "dot": DotProduct}[validated["kernel"]]()
-        elif entry.factory == "mlp":
-            constructor["hidden_layer_sizes"] = (constructor.pop("hidden_units"),)
-        if spec["library"] == "catboost":
-            constructor.update(random_seed=int(seed), thread_count=int(n_jobs))
+            cls, profile = self._legacy_constructor(algorithm_id)
+            constructor = deepcopy(validated)
+            if algorithm_id == "tweedie" and 0 < constructor["power"] < 1:
+                raise ValueError("Tweedie не определен при 0<power<1.")
         else:
-            supported = cls(**constructor).get_params(deep=False)
-            if "random_state" in supported:
+            entry = self._entries[algorithm_id]
+            module_name, class_name = entry.class_path.rsplit(".", 1)
+            try:
+                cls = getattr(import_module(module_name), class_name)
+            except (ImportError, OSError) as exc:
+                reason = f"Библиотека {spec['library']} не загрузилась: {exc}. Проверьте установку нативных зависимостей."
+                self._import_failures[spec["library"]] = reason
+                raise ValueError(reason) from exc
+            constructor = deepcopy(validated)
+        constructor = self._decode_parameters(task, algorithm_id, cls, constructor, seed, ancestors, depth)
+        library = spec["library"]
+        profile_defaults = {field["key"]: field["default"] for field in spec["params"]}
+        alias_requested = {key: value for key, value in requested.items()
+                           if value != profile_defaults.get(key)}
+        if library == "catboost":
+            self._resolve_alias_groups(constructor, alias_requested, (
+                ("iterations", "n_estimators", "num_boost_round", "num_trees"),
+                ("depth", "max_depth"), ("learning_rate", "eta"),
+                ("l2_leaf_reg", "reg_lambda"), ("loss_function", "objective"),
+                ("random_seed", "random_state"), ("border_count", "max_bin"),
+                ("rsm", "colsample_bylevel"), ("min_data_in_leaf", "min_child_samples"),
+                ("max_leaves", "num_leaves"), ("verbose", "silent", "logging_level"),
+            ))
+            # CatBoost rejects simultaneous aliases even when one is a default.
+            constructor = {key: value for key, value in constructor.items() if value is not None}
+            if not any(key in constructor for key in ("random_seed", "random_state")):
+                constructor["random_seed"] = int(seed)
+            if constructor.get("thread_count") is None:
+                constructor["thread_count"] = int(n_jobs)
+        else:
+            supported = constructor_defaults(cls)
+            if "random_state" in supported and constructor.get("random_state") is None:
                 constructor["random_state"] = int(seed)
-            if "n_jobs" in supported:
+            if "n_jobs" in supported and constructor.get("n_jobs") is None:
                 constructor["n_jobs"] = int(n_jobs)
-        return cls(**constructor)
+            if library in {"xgboost", "lightgbm"}:
+                constructor = {key: value for key, value in constructor.items()
+                               if value is not None or key in {"objective", "class_weight"}}
+            if library == "lightgbm":
+                self._resolve_alias_groups(constructor, alias_requested, (
+                    ("n_jobs", "num_threads"), ("reg_alpha", "lambda_l1"),
+                    ("reg_lambda", "lambda_l2"), ("subsample", "bagging_fraction"),
+                    ("subsample_freq", "bagging_freq"), ("colsample_bytree", "feature_fraction"),
+                    ("min_split_gain", "min_gain_to_split"),
+                ))
+        for key in ("n_jobs", "thread_count", "num_threads"):
+            if constructor.get(key) is not None and (isinstance(constructor[key], bool) or
+                    not isinstance(constructor[key], Integral) or not 1 <= constructor[key] <= 8):
+                raise ValueError(f"{key}: лаборатория принимает от 1 до 8 потоков.")
+        estimator = cls(**constructor)
+        if hasattr(estimator, "_parameter_constraints") and hasattr(estimator, "_validate_params"):
+            estimator._validate_params()
+        return estimator
 
     @staticmethod
-    def _normalize(entry: _Algorithm, validated: dict) -> dict:
-        result = deepcopy(validated)
-        if result.get("max_depth") == 0:
-            result["max_depth"] = None
-        if result.get("max_features") == "all":
-            result["max_features"] = 1.0
-        if result.get("class_weight") == "none":
-            result["class_weight"] = None
-        result.update(deepcopy(entry.constants))
+    def _profile_defaults(entry, cls):
+        values = constructor_defaults(cls)
+        for field in entry.metadata["params"]:
+            if field["key"] in values:
+                values[field["key"]] = deepcopy(field["default"])
+        values.update(deepcopy(entry.constants))
+        if values.get("max_depth") == 0 and cls.__module__.startswith("sklearn"):
+            values["max_depth"] = None
+        if values.get("max_features") == "all":
+            values["max_features"] = 1.0
+        if values.get("class_weight") == "none":
+            values["class_weight"] = None
+        if entry.factory == "mlp":
+            values["hidden_layer_sizes"] = [next(field["default"] for field in entry.metadata["params"]
+                                                 if field["key"] == "hidden_units")]
+        if entry.factory == "gaussian_process":
+            values["kernel"] = {"class": "RBF", "params": {"length_scale": 1.0}}
+        if entry.factory == "ensemble":
+            classifier = "Classifier" in cls.__name__
+            suffix = "classifier" if classifier else "regressor"
+            linear = "logistic_regression" if classifier else "ridge"
+            values["estimators"] = [
+                {"name": "tree", "algorithm_id": f"decision_tree_{suffix}", "params": {}},
+                {"name": "forest", "algorithm_id": f"random_forest_{suffix}", "params": {}},
+                {"name": "linear", "algorithm_id": linear, "params": {}},
+            ]
+            if cls.__name__.startswith("Stacking"):
+                values["final_estimator"] = {"algorithm_id": linear, "params": {}}
+        return values
+
+    @staticmethod
+    def _resolve_alias_groups(constructor, requested, groups):
+        for group in groups:
+            explicit = [key for key in group if key in requested and requested[key] is not None]
+            if len(explicit) > 1:
+                raise ValueError("Задайте только один синоним параметра: " + ", ".join(group))
+            winner = explicit[0] if explicit else next((key for key in group if constructor.get(key) is not None), None)
+            for key in group:
+                if key != winner:
+                    constructor.pop(key, None)
+
+    @staticmethod
+    def _migrate_params(algorithm_id, params):
+        if params is None:
+            return {}
+        if not isinstance(params, dict):
+            raise ValueError("Параметры модели должны быть объектом.")
+        values = deepcopy(params)
+        if "hidden_units" in values:
+            if "hidden_layer_sizes" in values:
+                raise ValueError("Не задавайте hidden_units вместе с hidden_layer_sizes.")
+            values["hidden_layer_sizes"] = [values.pop("hidden_units")]
+        if "components" in values or "base_estimators" in values:
+            if "estimators" in values:
+                raise ValueError("Не задавайте components вместе с estimators.")
+            if not algorithm_id.startswith(("voting_", "stacking_")):
+                raise ValueError("components разрешен только для voting/stacking.")
+            classifier = algorithm_id.endswith("classifier")
+            suffix = "classifier" if classifier else "regressor"
+            linear = "logistic_regression" if classifier else "ridge"
+            profiles = {
+                "tree_forest_linear": [f"decision_tree_{suffix}", f"random_forest_{suffix}", linear],
+                "forest_boosting": [f"random_forest_{suffix}", f"hist_gradient_boosting_{suffix}"],
+                "neighbors_linear": [f"knn_{suffix}", linear],
+            }
+            preset = values.pop("base_estimators", "tree_forest_linear")
+            if preset not in profiles:
+                raise ValueError("Неизвестный набор компонентов ансамбля.")
+            components = values.pop("components", [])
+            if not isinstance(components, list):
+                raise ValueError("components должен быть списком.")
+            components = components or [{"algorithm_id": key, "params": {}} for key in profiles[preset]]
+            values["estimators"] = [{"name": f"model_{index + 1}", **component}
+                                    if isinstance(component, dict) else component
+                                    for index, component in enumerate(components)]
+        if values.get("class_weight") == "none":
+            values["class_weight"] = None
+        if values.get("max_features") == "all":
+            values["max_features"] = 1.0
+        if values.get("max_depth") == 0 and not algorithm_id.startswith(("xgboost_", "lightgbm_", "catboost_")):
+            values["max_depth"] = None
+        if values.get("penalty") == "none":
+            values["penalty"] = None
+        if algorithm_id == "ransac":
+            for key in ("min_samples", "residual_threshold"):
+                if values.get(key) == 0:
+                    values[key] = None
+        return values
+
+    def _decode_parameters(self, task, algorithm_id, cls, constructor, seed, ancestors, depth):
+        if "estimators" in constructor:
+            declarations = constructor["estimators"]
+            if not isinstance(declarations, list) or not 2 <= len(declarations) <= 8:
+                raise ValueError("Для ансамбля нужны хотя бы две и не более 8 именованных моделей.")
+            models, names = [], set()
+            for index, declaration in enumerate(declarations):
+                if isinstance(declaration, list) and len(declaration) == 2:
+                    name, declaration = declaration
+                    declaration = {"name": name, **declaration} if isinstance(declaration, dict) else {"name": name, "algorithm_id": declaration}
+                if not isinstance(declaration, dict) or set(declaration) - {"name", "algorithm_id", "params"}:
+                    raise ValueError("Компонент ансамбля должен содержать name, algorithm_id и params.")
+                name = declaration.get("name", f"model_{index + 1}")
+                if not isinstance(name, str) or not name or "__" in name or name in names or len(name) > 100:
+                    raise ValueError("Имена компонентов должны быть уникальны и не содержать __.")
+                names.add(name)
+                model = self._decode_estimator(task, declaration, seed + index, ancestors, depth)
+                if constructor.get("voting") == "soft" and not hasattr(model, "predict_proba"):
+                    raise ValueError("Мягкое голосование требует вероятностей от каждого компонента.")
+                models.append((name, model))
+            constructor["estimators"] = models
+        for key in ("estimator", "final_estimator"):
+            if constructor.get(key) is not None:
+                constructor[key] = self._decode_estimator(task, constructor[key], seed, ancestors, depth)
+        if constructor.get("covariance_estimator") is not None:
+            constructor["covariance_estimator"] = self._decode_covariance(constructor["covariance_estimator"])
+        if cls.__module__.startswith("sklearn.gaussian_process") and constructor.get("kernel") is not None:
+            constructor["kernel"] = self._decode_kernel(constructor["kernel"])
+        for key in ("class_weight", "class_weights"):
+            if isinstance(constructor.get(key), dict):
+                constructor[key] = {int(name) if isinstance(name, str) and name.lstrip("-").isdigit() else name: weight
+                                    for name, weight in constructor[key].items()}
+        if "hidden_layer_sizes" in constructor:
+            value = constructor["hidden_layer_sizes"]
+            if isinstance(value, Integral) and not isinstance(value, bool):
+                value = [value]
+            if not isinstance(value, (list, tuple)) or not value or len(value) > 20 or any(
+                    isinstance(item, bool) or not isinstance(item, Integral) or not 1 <= item <= 10000 for item in value):
+                raise ValueError("hidden_layer_sizes: требуется от 1 до 20 размеров слоев (целые числа 1..10000).")
+            constructor["hidden_layer_sizes"] = tuple(int(item) for item in value)
+        if cls.__module__.startswith("xgboost") and constructor.get("missing") is None:
+            constructor["missing"] = np.nan
+        for key, value in list(constructor.items()):
+            if isinstance(value, dict) and set(value) == {"special"}:
+                if value["special"] not in {"inf", "-inf"}:
+                    raise ValueError("special: разрешены inf и -inf.")
+                constructor[key] = np.inf if value["special"] == "inf" else -np.inf
+            elif isinstance(value, dict) and "function" in value:
+                constructor[key] = self._decode_function(value)
+            elif key == "callbacks" and value is not None:
+                constructor[key] = self._decode_callbacks(value)
+            elif key in {"callback", "is_data_valid", "is_model_valid"} and value is not None:
+                raise ValueError(f"{key}: произвольные Python callbacks не поддерживаются JSON-рецептом.")
+        return constructor
+
+    def _decode_estimator(self, task, declaration, seed, ancestors, depth):
+        if not isinstance(declaration, dict) or set(declaration) - {"name", "algorithm_id", "params"}:
+            raise ValueError("Вложенная модель задается объектом algorithm_id и params.")
+        identifier = declaration.get("algorithm_id")
+        if not isinstance(identifier, str) or identifier not in self._entries and identifier not in self._legacy._specs:
+            raise ValueError("Этот алгоритм не разрешен в компонентах ансамбля.")
+        return self._build(task, identifier, declaration.get("params", {}),
+                           int(seed) % 2**32, 1, ancestors, depth + 1)
+
+    @staticmethod
+    def _decode_covariance(declaration):
+        from sklearn import covariance
+        names = {"EmpiricalCovariance", "ShrunkCovariance", "LedoitWolf", "OAS", "GraphicalLasso", "GraphicalLassoCV", "MinCovDet"}
+        if not isinstance(declaration, dict) or set(declaration) - {"class", "params"}:
+            raise ValueError("covariance_estimator: требуется декларация class и params.")
+        name = declaration.get("class", "").split(".")[-1]
+        if name not in names:
+            raise ValueError("covariance_estimator: неизвестный sklearn.covariance estimator.")
+        model = getattr(covariance, name)(**declaration.get("params", {}))
+        model._validate_params()
+        return model
+
+    @staticmethod
+    def _decode_kernel(declaration, depth=0):
+        from sklearn.gaussian_process import kernels
+        if depth > 10:
+            raise ValueError("kernel: превышена глубина комбинации ядер.")
+        if isinstance(declaration, str):
+            declaration = {"class": {"rbf": "RBF", "matern": "Matern", "dot": "DotProduct"}.get(declaration, declaration), "params": {}}
+        if not isinstance(declaration, dict):
+            raise ValueError("kernel: требуется декларация ядра.")
+        if "op" in declaration:
+            if set(declaration) - {"op", "left", "right"} or declaration["op"] not in {"sum", "product"}:
+                raise ValueError("kernel: разрешены только sum и product.")
+            left = AlgorithmCatalogue._decode_kernel(declaration.get("left"), depth + 1)
+            right = AlgorithmCatalogue._decode_kernel(declaration.get("right"), depth + 1)
+            return left + right if declaration["op"] == "sum" else left * right
+        names = {"RBF", "Matern", "DotProduct", "WhiteKernel", "ConstantKernel", "RationalQuadratic", "ExpSineSquared"}
+        name = declaration.get("class", "").split(".")[-1]
+        if set(declaration) - {"class", "params"} or name not in names or not isinstance(declaration.get("params", {}), dict):
+            raise ValueError("kernel: неизвестное ядро или неверная декларация params.")
+        params = deepcopy(declaration.get("params", {}))
+        for key in list(params):
+            if key.endswith("_bounds") and isinstance(params[key], list):
+                params[key] = tuple(params[key])
+        try:
+            return getattr(kernels, name)(**params)
+        except TypeError as exc:
+            raise ValueError(f"kernel: {exc}") from exc
+
+    @staticmethod
+    def _decode_function(declaration):
+        from sklearn import metrics
+        from sklearn.metrics import pairwise
+        allowed = {"numpy.mean": np.mean, "numpy.median": np.median,
+                   "numpy.sum": np.sum, "numpy.min": np.min, "numpy.max": np.max,
+                   **{f"sklearn.metrics.{name}": getattr(metrics, name) for name in
+                      ("accuracy_score", "r2_score", "mean_squared_error", "mean_absolute_error")},
+                   **{f"sklearn.metrics.pairwise.{name}": getattr(pairwise, name) for name in
+                      ("linear_kernel", "rbf_kernel", "polynomial_kernel", "sigmoid_kernel", "cosine_similarity")}}
+        if set(declaration) != {"function"} or declaration["function"] not in allowed:
+            raise ValueError("Разрешена только декларация зарегистрированной функции.")
+        return allowed[declaration["function"]]
+
+    @staticmethod
+    def _decode_callbacks(declarations):
+        from xgboost import callback
+        allowed = {"EarlyStopping", "EvaluationMonitor", "LearningRateScheduler"}
+        if not isinstance(declarations, list) or len(declarations) > 10:
+            raise ValueError("callbacks: требуется список до 10 деклараций.")
+        result = []
+        for declaration in declarations:
+            if not isinstance(declaration, dict) or set(declaration) - {"class", "params"}:
+                raise ValueError("callbacks: требуется class и params.")
+            name = declaration.get("class", "").split(".")[-1]
+            if name not in allowed:
+                raise ValueError("callbacks: неизвестный callback XGBoost.")
+            try:
+                result.append(getattr(callback, name)(**declaration.get("params", {})))
+            except TypeError as exc:
+                raise ValueError(f"callbacks: {exc}") from exc
         return result
 
     @staticmethod
@@ -771,6 +1090,13 @@ class AlgorithmCatalogue:
             field = fields[key]
             kind = field["type"]
             label = field["label"]
+            validate_json(value, key=key)
+            if field.get("numeric_only") and isinstance(value, bool):
+                raise ValueError(f"{label}: требуется число, не true/false.")
+            if value is None and field.get("nullable"):
+                continue
+            if kind == "string" and not isinstance(value, str):
+                raise ValueError(f"{label}: требуется строка.")
             if kind == "bool" and not isinstance(value, bool):
                 raise ValueError(f"{label}: требуется true или false.")
             if kind == "select":
@@ -783,6 +1109,8 @@ class AlgorithmCatalogue:
                     raise ValueError(f"{label}: требуется конечное {'целое ' if kind == 'int' else ''}число.")
                 if not field.get("min", -np.inf) <= value <= field.get("max", np.inf):
                     raise ValueError(f"{label}: значение вне допустимого диапазона.")
+                if field.get("min_exclusive") and value == field.get("min") or field.get("max_exclusive") and value == field.get("max"):
+                    raise ValueError(f"{label}: значение находится на исключенной границе диапазона.")
                 values[key] = int(value) if kind == "int" else float(value)
             if kind == "models":
                 if not isinstance(value, list) or len(value) > field["max_items"]:
@@ -796,35 +1124,6 @@ class AlgorithmCatalogue:
                         raise ValueError("Параметры компонента должны быть объектом.")
         return values
 
-    def _ensemble_params(self, task, algorithm_id, validated, seed, ancestors, depth):
-        classifier = task == "classification"
-        suffix = "classifier" if classifier else "regressor"
-        linear = "logistic_regression" if classifier else "ridge"
-        defaults = {
-            "tree_forest_linear": [f"decision_tree_{suffix}", f"random_forest_{suffix}", linear],
-            "forest_boosting": [f"random_forest_{suffix}", f"hist_gradient_boosting_{suffix}"],
-            "neighbors_linear": [f"knn_{suffix}", linear],
-        }
-        components = validated["components"] or [
-            {"algorithm_id": item, "params": {}} for item in defaults[validated["base_estimators"]]
-        ]
-        if len(components) < 2:
-            raise ValueError("Для ансамбля нужны хотя бы две базовые модели.")
-        estimators = []
-        for index, component in enumerate(components):
-            estimator = self._build(task, component["algorithm_id"], component.get("params", {}),
-                                    (int(seed) + index) % 2**32, 1, (*ancestors, algorithm_id), depth + 1)
-            if validated.get("voting") == "soft" and not hasattr(estimator, "predict_proba"):
-                raise ValueError("Мягкое голосование требует вероятностей от каждого компонента.")
-            estimators.append((f"model_{index + 1}", estimator))
-        result = {"estimators": estimators}
-        if algorithm_id.startswith("voting_"):
-            if classifier:
-                result["voting"] = validated["voting"]
-        else:
-            result["cv"] = validated["cv"]
-            result["final_estimator"] = self._build(task, linear, {}, seed, 1, (), depth + 1)
-        return result
 
 
 def build(task: str, algorithm_id: str, params: dict | None = None, seed: int = 42, n_jobs: int = 1):

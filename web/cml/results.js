@@ -3,11 +3,12 @@ import { action, heading, notice, select } from './controls.js';
 import { TracePlayer } from './training.js';
 import { renderPredictionView } from './prediction-plots.js';
 import { addDiagnosticPlots } from './diagnostics-plots.js';
+import { helpButton } from './help.js';
 
 const TASK_LABELS = { regression: 'Регрессия', classification: 'Классификация', clustering: 'Кластеризация', ranking: 'Ранжирование', forecasting: 'Прогноз по времени', panel: 'Панельные данные', anomaly: 'Поиск аномалий', reduction: 'Сокращение размерности' };
 
 export class ResultsWorkspace {
-  constructor({ api, onReveal, onSave, onError }) { this.api = api; this.onReveal = onReveal; this.onSave = onSave; this.onError = onError; this.result = null; }
+  constructor({ api, onReveal, onSave, onError, catalogue }) { this.api = api; this.onReveal = onReveal; this.onSave = onSave; this.onError = onError; this.catalogue = catalogue; this.result = null; }
   mount(container) { this.container = container; this.empty(); return this; }
   empty() { this.tracePlayer?.destroy(); if (this.container) this.container.replaceChildren(element('section', { className: 'cml-panel' }, [heading('Результаты расчета', { help: 'Графики и метрики появятся после реального обучения.', lesson_id: '20-metrics-experiment' }), element('p', { className: 'cml-empty', text: 'Выберите данные, задачу и алгоритм. Затем нажмите «Запустить расчет».' })])); }
 
@@ -138,7 +139,11 @@ export class ResultsWorkspace {
     const details = Object.entries(evaluations).flatMap(([part, evaluation]) => Object.entries(evaluation.metric_details || {}).filter(([, item]) => item?.reason || item?.message).map(([key, item]) => notice(`${part}: ${key} — ${item.reason || item.message}`)));
     return element('div', { className: 'cml-table-scroll' }, [element('table', { className: 'cml-table' }, [
       element('thead', {}, [element('tr', {}, ['Метрика', 'Обучение', 'Выбор', 'Итоговая проверка'].map(text => element('th', { text })))]),
-      element('tbody', {}, keys.map(key => element('tr', {}, [element('td', { text: key }), ...['train', 'validation', 'test'].map(part => element('td', { text: evaluations[part]?.hidden === true || (!evaluations[part] && part === 'test') ? 'Скрыто' : evaluations[part] ? formatNumber(evaluations[part].metrics?.[key]) : '—' }))]))),
+      element('tbody', {}, keys.map(key => {
+        const metric = this.catalogue?.metrics?.find(item => item.id === key && item.task === this.result?.task);
+        const label = metric?.name || key;
+        return element('tr', {}, [element('th', { scope: 'row' }, [element('span', { text: label }), helpButton({ label, help: metric?.help || metric?.description || `Значение ${label} относится к указанному разбиению данных. Формула и смысл показателя описаны в учебнике.`, lesson_id: metric?.lesson_id || '20-metrics-experiment' })]), ...['train', 'validation', 'test'].map(part => element('td', { text: evaluations[part]?.hidden === true || (!evaluations[part] && part === 'test') ? 'Скрыто' : evaluations[part] ? formatNumber(evaluations[part].metrics?.[key]) : '—' }))]);
+      })),
     ]), ...details]);
   }
 

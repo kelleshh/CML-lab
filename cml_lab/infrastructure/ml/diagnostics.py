@@ -143,7 +143,7 @@ def build_diagnostics(spec, artifact, X_train, y_train, X_validation, y_validati
             results = calculate_points("regularization_path", entries,
                                        lambda entry: (np.arange(len(X_train)), {**(spec.get("params") or {}), "alpha": entry["alpha"]}))
             output["regularization_path"] = {**info, "alphas": alphas, "points": [point for point, _ in results],
-                    "coefficients": [coef for _, coef in results], "feature_names": list(artifact.preprocessing.get_feature_names_out()),
+                    "coefficients": [coef for _, coef in results], "feature_names": artifact.feature_names,
                     "note": "Каждая точка — новый полный конвейер с другим alpha, не шаг обучения. Коэффициенты относятся к подготовленным признакам; у нелинейных моделей коэффициентов нет."}
 
     if "learning_curve" in enabled:

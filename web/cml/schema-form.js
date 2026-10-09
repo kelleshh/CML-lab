@@ -36,10 +36,10 @@ export class SchemaForm {
       const key = field.key || field.name;
       if (!key) continue;
       const inputId = id(`param-${key}`);
-      const label = field.label || key;
+      const label = key;
       const wrapper = element('div', { className: 'cml-field' });
       const heading = element('div', { className: 'cml-field-heading' }, [
-        element('label', { htmlFor: inputId, text: label }), helpButton({ label, ...field }),
+        element('label', { htmlFor: inputId, text: label }), helpButton({ ...field, label }),
       ]);
       const current = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : field.default;
       let control;
@@ -54,10 +54,22 @@ export class SchemaForm {
         control._getValue = () => [...control.querySelectorAll('input:checked')].map(check => options.find(option => String(typeof option === 'object' && option !== null ? option.value : option) === check.value)).map(option => typeof option === 'object' && option !== null ? option.value : option);
         control._setValue = values => control.querySelectorAll('input').forEach(check => { check.checked = (values || []).map(String).includes(check.value); });
         wrapper.classList.add('full');
-      } else if (field.type === 'json') {
+      } else if (field.type === 'json' && key === 'categories' && field.format !== 'json') {
         control = element('textarea', { id: inputId, rows: 3, value: Array.isArray(current) ? current.map(row => Array.isArray(row) ? row.join(', ') : String(row)).join('\n') : '', placeholder: 'Пусто: автоматически. Категории одного столбца в строке: низкий, средний, высокий.' });
         control._getValue = () => control.value.trim() ? control.value.trim().split(/\n+/).map(line => line.split(',').map(value => value.trim()).filter(Boolean)) : null;
         control._setValue = value => { control.value = Array.isArray(value) ? value.map(row => Array.isArray(row) ? row.join(', ') : String(row)).join('\n') : ''; };
+        wrapper.classList.add('full');
+      } else if (['json', 'estimator', 'estimators', 'kernel'].includes(field.type)) {
+        const example = field.example || (field.type === 'estimator' ? { algorithm_id: 'ridge', params: { alpha: 1 } } : field.type === 'kernel' ? { class: 'RBF', params: { length_scale: 1 } } : field.type === 'estimators' ? [{ name: 'ridge', algorithm_id: 'ridge', params: { alpha: 1 } }] : null);
+        control = element('textarea', { id: inputId, name: key, rows: 4, spellcheck: false, value: current === undefined ? 'null' : JSON.stringify(current, null, 2), placeholder: JSON.stringify(example, null, 2) });
+        control.classList.add('cml-json-editor');
+        const parse = () => {
+          try { const value = JSON.parse(control.value.trim() || 'null'); control.setCustomValidity(''); return value; }
+          catch { control.setCustomValidity(`${key}: введите корректный JSON.`); throw new Error(`${key}: некорректный JSON.`); }
+        };
+        control._getValue = parse;
+        control._setValue = value => { control.value = JSON.stringify(value ?? null, null, 2); control.setCustomValidity(''); };
+        control.addEventListener('input', () => { try { parse(); } catch { /* Keep invalid text editable. */ } });
         wrapper.classList.add('full');
       } else if (field.type === 'models') {
         control = this.modelsControl(current || [], field);
@@ -67,7 +79,7 @@ export class SchemaForm {
         control = element('select', { id: inputId, name: key });
         for (const option of field.options || field.choices || []) {
           const value = typeof option === 'object' && option !== null && Object.hasOwn(option, 'value') ? option.value : option;
-          const optionLabel = option?.label ?? field.option_labels?.[String(value)] ?? (value === null ? 'Автоматически' : String(value));
+          const optionLabel = option?.label ?? field.option_labels?.[String(value)] ?? (value === null ? 'None' : String(value));
           control.append(element('option', { value: value === null ? '' : String(value), text: optionLabel }));
         }
         control.value = current === null ? '' : String(current ?? '');
@@ -79,7 +91,7 @@ export class SchemaForm {
         control = element('input', {
           id: inputId, name: key, type: numeric ? 'number' : 'text', value: Array.isArray(current) ? current.join(', ') : current ?? '',
           min: field.min, max: field.max, step: ['int', 'integer'].includes(field.type) ? (field.step || 1) : numeric ? 'any' : undefined,
-          required: field.required ?? (numeric && !field.nullable && field.default !== null), placeholder: field.nullable || field.default === null ? 'Автоматически' : undefined,
+          required: field.required ?? (numeric && !field.nullable && field.default !== null), placeholder: field.nullable || field.default === null ? 'None' : undefined,
         });
       }
       control.dataset.parameter = key;
@@ -88,7 +100,7 @@ export class SchemaForm {
         control.setAttribute('aria-describedby', descriptionId);
         wrapper.append(heading, control, element('p', { id: descriptionId, className: 'cml-field-note', text: field.description }));
       } else wrapper.append(heading, control);
-      control.addEventListener('change', () => this.onChange(this.values(), key));
+      control.addEventListener('change', () => { try { this.onChange(this.values(), key); } catch { control.reportValidity?.(); } });
       this.controls.set(key, { control, field });
       grid.append(wrapper);
     }

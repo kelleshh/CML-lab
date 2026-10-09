@@ -1,9 +1,10 @@
 import { element, formatNumber } from './dom.js';
 import { action, field, notice, checkbox } from './controls.js';
+import { renderPipelineGraph } from './pipeline-graph.js';
 
 const RESOURCES = {
   'model-recipes': { title: 'Шаблоны моделей', singular: 'Шаблон модели', description: 'Алгоритм и его настройки. Обученный результат хранится отдельно.' },
-  'preprocessor-recipes': { title: 'Препроцессоры', singular: 'Препроцессор', description: 'Сохраненная последовательность подготовки данных.' },
+  'preprocessor-recipes': { title: 'Pipelines', singular: 'Pipeline', description: 'Сохраненные преобразования признаков: Python, ветви и настройки.' },
   projects: { title: 'Проекты', singular: 'Проект', description: 'Данные, задача, модель, подготовка и правила проверки.' },
 };
 
@@ -12,17 +13,21 @@ export class RecipeLibrary {
     this.api = api; this.getConfig = getConfig; this.applyConfig = applyConfig;
     this.notify = notify; this.onError = onError; this.kind = 'projects';
     this.selection = null; this.items = []; this.busy = false; this.copy = null; this.query = '';
+    this.pipelineDescriptions = new Map();
+    this.refreshGeneration = 0;
   }
 
   mount(container) { this.container = container; this.render(); return this; }
 
   async open(kind) {
-    this.kind = kind; this.selection = null; this.copy = null; this.query = '';
+    this.kind = kind === 'pipelines' ? 'preprocessor-recipes' : kind; this.selection = null; this.copy = null; this.query = '';
     await this.refresh();
   }
 
   async refresh() {
-    const payload = await this.api.request(`/cml/${this.kind}`);
+    const kind = this.kind, generation = ++this.refreshGeneration;
+    const payload = await this.api.request(`/cml/${kind}`);
+    if (generation !== this.refreshGeneration || kind !== this.kind) return;
     this.items = Array.isArray(payload) ? payload : payload.items || [];
     if (this.selection) this.selection = this.items.find(item => item.id === this.selection.id) || null;
     this.render();
@@ -43,9 +48,7 @@ export class RecipeLibrary {
     const renderList = () => {
       const query = search.value.toLowerCase().trim();
       const items = this.items.filter(item => `${item.name} ${item.description}`.toLowerCase().includes(query));
-      list.replaceChildren(...(items.length ? items.map(item => element('button', {
-        className: 'cml-entity', 'aria-current': String(this.selection?.id === item.id), onclick: () => { this.selection = item; this.copy = null; this.render(); },
-      }, [element('strong', { text: item.name }), element('small', { text: `${item.description || resource.singular} · редакция ${item.revision}` })])) : [element('p', { className: 'cml-empty', text: this.items.length ? 'Нет объектов, соответствующих поиску.' : 'Сохраненных объектов пока нет. Создайте объект из текущих настроек эксперимента.' })]));
+      list.replaceChildren(...(items.length ? items.map(item => this.card(item, resource)) : [element('p', { className: 'cml-empty', text: this.items.length ? 'Нет объектов, соответствующих поиску.' : 'Сохраненных объектов пока нет. Создайте объект из текущих настроек эксперимента.' })]));
     };
     search.addEventListener('input', () => { this.query = search.value; renderList(); });
     renderList();
@@ -68,6 +71,8 @@ export class RecipeLibrary {
     if (this.selection) {
       buttons.push(action('Применить в конструкторе', () => this.guarded(async () => { await this.applyConfig(this.kind, this.selection.config); this.notify('Настройки применены.'); })));
       buttons.push(action('Сохранить копию', () => { this.copy = structuredClone(this.selection); this.selection = null; this.render(); }));
+      if (this.kind === 'projects') buttons.push(...['py', 'ipynb'].map(format => action(`Export .${format}`, () => this.guarded(() => this.api.download(`/cml/projects/${encodeURIComponent(this.selection.id)}/export?format=${format}`, `project.${format}`)))));
+      if (this.kind === 'preprocessor-recipes') buttons.push(...['py', 'json'].map(format => action(`Export .${format}`, () => this.guarded(() => this.api.download(`/cml/preprocessor-recipes/${encodeURIComponent(this.selection.id)}/export?format=${format}`, `pipeline.${format}`)))));
       buttons.push(action('Удалить', () => this.guarded(async () => {
         if (!window.confirm(`Удалить «${this.selection.name}» из библиотеки? Снимки прошлых запусков сохранятся.`)) return;
         await this.api.request(`/cml/${this.kind}/${encodeURIComponent(this.selection.id)}`, { method: 'DELETE' });
@@ -93,7 +98,43 @@ export class RecipeLibrary {
 
   describe(config = {}) {
     if (this.kind === 'model-recipes') return [`Алгоритм: ${config.algorithm_id || 'не выбран'}`, ...Object.entries(config.params || {}).map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`)].join('\n');
-    if (this.kind === 'preprocessor-recipes') return (config.steps || []).map((step, index) => `${index + 1}. ${step.adapter_id}${step.enabled === false ? ' (выключен)' : ''} · ${(step.columns || []).join(', ') || 'все подходящие столбцы'}`).join('\n') || 'Подготовка по умолчанию';
+    if (this.kind === 'preprocessor-recipes') return this.declarative(config)?.source || (config.steps || []).map((step, index) => `${index + 1}. ${step.adapter_id}${step.enabled === false ? ' (выключен)' : ''} · ${(step.columns || []).join(', ') || 'все подходящие столбцы'}`).join('\n') || 'Подготовка по умолчанию';
     return `Задача: ${config.task || 'regression'}\nДатасет: ${config.dataset_id || 'не выбран'}\nАлгоритм: ${config.algorithm_id || 'не выбран'}\nПризнаков: ${(config.features || []).length}\nОбучение: ${formatNumber((config.split?.train || .6) * 100)}%`;
+  }
+
+  declarative(config = {}) {
+    return config.declarative_pipeline || config.preprocessing?.declarative_pipeline || (config.format === 'cml.pipeline' ? config : null);
+  }
+
+  card(item, resource) {
+    const config = item.config || {};
+    const select = element('button', { type: 'button', className: 'cml-entity', 'aria-current': String(this.selection?.id === item.id), onclick: () => { this.selection = item; this.copy = null; this.render(); } }, [element('strong', { text: item.name }), element('small', { text: `${item.description || resource.singular} · revision ${item.revision}` })]);
+    const card = element('article', { className: 'cml-library-card', 'data-library-id': item.id }, [select]);
+    const metadata = this.kind === 'model-recipes' ? `${config.algorithm_id || 'algorithm not selected'} · ${Object.keys(config.params || {}).length} parameters` : this.kind === 'projects' ? `${config.task || 'regression'} · ${config.algorithm_id || 'algorithm not selected'} · ${(config.features || []).length} features` : this.declarative(config) ? 'sklearn Pipeline · Python definition' : `${(config.steps || []).filter(step => step.enabled !== false).length} preprocessing steps`;
+    card.append(element('p', { className: 'cml-library-card-summary', text: metadata }));
+    if (this.kind === 'preprocessor-recipes') {
+      const diagram = element('div', { className: 'cml-library-pipeline-graph' });
+      card.append(diagram);
+      const spec = this.declarative(config);
+      if (spec) this.describeDiagram(diagram, item, spec);
+      else diagram.append(element('ol', { className: 'cml-library-legacy-steps' }, (config.steps || []).filter(step => step.enabled !== false).map(step => element('li', { text: `${step.adapter_id} ← ${(step.columns || []).join(', ') || 'compatible features'}` }))));
+      if (!spec && !(config.steps || []).length) diagram.append(element('p', { className: 'cml-note', text: 'Стандартная подготовка: imputation → encoding → scaling.' }));
+      card.append(element('div', { className: 'cml-toolbar' }, ['py', 'json'].map(format => action(`Download .${format}`, () => this.guarded(() => this.api.download(`/cml/preprocessor-recipes/${encodeURIComponent(item.id)}/export?format=${format}`, `pipeline.${format}`))))));
+    }
+    if (this.kind === 'projects') card.append(element('div', { className: 'cml-toolbar' }, ['py', 'ipynb'].map(format => action(`Download .${format}`, () => this.guarded(() => this.api.download(`/cml/projects/${encodeURIComponent(item.id)}/export?format=${format}`, `project.${format}`))))));
+    return card;
+  }
+
+  async describeDiagram(container, item, spec) {
+    const cacheKey = `${item.id}:${item.revision}:${spec.source}`;
+    const cached = this.pipelineDescriptions.get(cacheKey);
+    if (cached) { renderPipelineGraph(container, cached.tree, { readOnly: true }); return; }
+    container.append(element('p', { className: 'cml-note', text: 'Проверка схемы Pipeline…' }));
+    try {
+      const description = await this.api.request('/cml/pipelines/validate', { method: 'POST', body: spec });
+      if (!description.tree) throw new Error('Сервер не вернул дерево Pipeline.');
+      this.pipelineDescriptions.set(cacheKey, description);
+      if (container.isConnected) renderPipelineGraph(container, description.tree, { readOnly: true });
+    } catch (error) { if (container.isConnected) container.replaceChildren(notice(`Схема недоступна: ${error.message}`, true)); }
   }
 }

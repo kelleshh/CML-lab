@@ -13,6 +13,11 @@ from cml_lab.shared.domain import ConflictError
 from .data_routes import data_routes
 from .recipe_routes import recipe_routes
 from .execution_routes import execution_routes
+from .pipeline_routes import pipeline_routes
+from .project_exports import project_exports
+from cml_lab.infrastructure.project_export import LocalProjectExporter
+from cml_lab.infrastructure.analysis import DatasetAnalysis
+from .analysis_routes import analysis_routes
 
 
 def create_app(root=None,*,services=None):
@@ -76,6 +81,9 @@ def create_app(root=None,*,services=None):
     for kind,prefix in (("model","model-recipes"),("preprocessor","preprocessor-recipes"),("project","projects")):
         app.include_router(recipe_routes(services.recipes,kind,prefix))
     app.include_router(execution_routes(services))
+    app.include_router(pipeline_routes(services))
+    app.include_router(project_exports(services, LocalProjectExporter(services.data.gateway)))
+    app.include_router(analysis_routes(DatasetAnalysis(services.data.gateway)))
 
     @app.get("/")
     def index():return FileResponse(web/"index.html")

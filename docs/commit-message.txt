@@ -1,0 +1,112 @@
+feat(cml-lab): add declarative pipelines and complete the project workflow
+
+Replace the limited experiment interface with an explicit project workflow
+covering Data, Analysis, Pipeline, Estimator, Tuning, Training, and
+Serialization. Keep existing recipe identifiers, dataset snapshots,
+execution states, and numerical adapters compatible. Connect each stage to
+real services and preserve the distinction between editable configuration,
+completed execution, and fitted artifacts. Retain the classic cream,
+graphite, and burgundy presentation while adding wider working areas for
+code, feature routing, and detailed forms.
+
+Expose all registered estimator constructor settings using their exact
+English API names. The catalogue now describes 117 algorithms and 1912 model
+parameters, including native booster options and structured estimator,
+ensemble, and kernel declarations. Build and clone every complete default
+form against installed libraries. Preserve supported historical aliases,
+explicit random seeds, nullable values, and bounded parallelism. Reject
+unknown options clearly instead of silently accepting parameters that never
+reach the numerical implementation.
+
+Organize estimator settings into basic and advanced groups with searchable
+names and Russian explanations. Filtering changes visibility without
+rebuilding controls or discarding edited values. Keep structured JSON
+editable when incomplete, report syntax errors beside the relevant form, and
+prevent invalid configuration from starting training. Preserve the browser
+receiver when invoking fetch, including JSON POST downloads, so loading the
+laboratory and exporting projects avoid the previously observed Illegal
+invocation failure.
+
+Introduce a declarative compiler for 83 registered sklearn classes. Support
+nested Pipeline, ColumnTransformer, and FeatureUnion compositions, column
+selectors, literal arrays, approved NumPy references, nested estimators, and
+supported output settings. Return canonical source, a normalized
+specification, a transformation tree, directed feature edges, and contextual
+warnings. Validate declarations without arbitrary execution. Reject
+unsupported imports, callbacks, fitted definitions, file access, and cyclic
+estimator references with controlled errors containing source positions.
+Check literal array types and Unicode storage before allocation, and enforce
+feature expansion budgets before expensive transformations.
+
+Add a mini IDE with Python syntax highlighting, completion through Tab or
+Control Space, copying, import, and export. Synchronize validated Python
+with graphical construction, branch selection, parameter editing, keyboard
+reordering, and dragging. Display actual installed sklearn source through
+the context menu. Preserve unfinished Python as a browser draft while
+blocking training with stale validated configuration. Keep editor Control
+Enter scoped to applying Python, and restore the Run button after successful
+validation.
+
+Integrate declarative preprocessing with real fitting, prediction,
+serialization, and cross validation. Create fresh transformations for every
+training partition and keep validation and test statistics out of fitting.
+Apply deep pipeline tuning overrides before training and retain them in
+effective snapshots and exported construction. Preserve native feature names
+where available and provide honest positional names otherwise. Handle
+supervised decomposition outputs without passing transformed targets forward
+as model features. Reject internal selector cross validation for
+incompatible chronological or grouped protocols.
+
+Improve hyperparameter search with editable Tiny through Wide presets,
+explicit candidate and fitting budgets, typed JSON choices, integer ranges,
+floating ranges, and logarithmic distributions. Support model parameters
+alongside deep pipeline paths across the six existing search methods.
+Validate generated candidates against actual constructors and show
+actionable limits. Keep final test observations excluded from search. The
+breadth control supplies starting grids rather than claiming to know
+universally optimal settings for arbitrary datasets.
+
+Expand classification and clustering metrics using standard names, including
+configurable F beta, averaging variants, Jaccard, Hamming loss, pairwise
+agreement, and information measures. Provide Russian help in selection
+forms, result tables, and model cards. Check numerical results against
+sklearn and independent count examples. Explain when probabilities, binary
+targets, reference labels, or inverse transformations are required. Preserve
+diagnostic indicators whose values have no universal optimization direction
+instead of presenting them as ordinary quality scores.
+
+Add dataset analysis inside projects with twenty plot types and configurable
+feature combinations. Show main distributions, missingness, and
+correlations, then generate additional charts only on request. Support
+empirical distributions, density estimates, quantile comparisons,
+relationships, categorical summaries, groups, and chronological views.
+Describe sampling, statistical assumptions, and plotted quantities. Bound
+expensive requests, retain raw data unchanged, and guard against delayed
+responses or rendering from a previously selected dataset replacing current
+analysis.
+
+Extend the library with dataset, pipeline, and trained model cards. Show
+dataset characteristics and CSV downloads, expose row and metadata editing
+through new immutable versions, and protect referenced records during
+deletion. Present measured model metrics and full fitted Joblib downloads
+with actual format compatibility. Show pipeline diagrams and export Python
+or the versioned laboratory JSON format. Preserve saved configuration during
+renaming and copying, and retain optimistic revision checks for updates.
+
+Export projects as executable Python and ordered notebooks containing
+dataset snapshots and resolved configuration. Replay preprocessing, tuning,
+training, and serialization in the CML laboratory environment while
+preserving hidden test behavior. Keep saved project revisions and completed
+run snapshots independently exportable. Expand the Russian curriculum to
+2911 materials with precise contextual meanings, parameter anchors,
+numerical examples, and primary documentation links. Search the entire
+catalogue while bounding rendered navigation and loading reference bodies
+separately.
+
+Validate the release with 1243 passing Python tests and 132 passing
+JavaScript tests. Exercise real worker training, nested tuning, artifact
+downloads, notebook replay, constructor defaults, semantic explanations, and
+failure boundaries. Launch the extracted archive on Linux from a path
+containing spaces and an ampersand, verify all lesson links, and stop
+cleanly. Document that native Windows and macOS execution, browser pixels,
+and unrestricted Python extensions remain outside these checks.

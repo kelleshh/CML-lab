@@ -16,6 +16,7 @@ from .fitting import fit_artifact
 from .metrics import TaskMetrics, REGRESSION_TASKS
 from .splitting import holdout, folds
 from .matrices import dense, for_estimator
+from .feature_names import feature_names
 
 
 def plain(value):
@@ -117,7 +118,9 @@ class ExperimentEngine:
             best,search=tune(spec,X.iloc[train],y[train],self.catalogue,self.metrics,inner,
                              label_encoder=encoder,groups=None if groups is None else groups[train],
                              weights=None if weights is None else weights[train],progress=progress,cancelled=cancelled)
-            spec["params"]=best
+            spec["params"]={key: value for key, value in best.items() if not key.startswith('pipeline__')}
+            pipeline_params = {key[len('pipeline__'):]: value for key, value in best.items() if key.startswith('pipeline__')}
+            if pipeline_params: spec['preprocessing'].setdefault('pipeline_params', {}).update(pipeline_params)
         if inner:
             cv=self.evaluate_folds(spec,X.iloc[train],y[train],inner,encoder,None if groups is None else groups[train],
                                     None if weights is None else weights[train],cancelled)
@@ -129,7 +132,7 @@ class ExperimentEngine:
         for name,indices in parts.items():
             evaluations[name]=self.evaluate_artifact(spec,artifact,X.iloc[indices],y[indices],context["indices"][indices],
                                                      None if groups is None else groups[indices])
-        names=list(artifact.preprocessing.get_feature_names_out())
+        names=artifact.feature_names
         model=artifact.estimator
         diagnostics={"preprocessing":{"features":names,"original_features":list(X.columns),"n_features":len(names)},
                      "sampling":sampling,"cv":cv,"search":search,"split_indices":{k:context["indices"][v[:1000]].tolist() for k,v in parts.items() if k!="test"}}
@@ -201,21 +204,27 @@ class ExperimentEngine:
         if spec.get("search"):raise ValueError("Подбор для обучения без учителя пока требует явного внешнего критерия; обычный supervised поиск сюда не применяется.")
         preprocessing=build_preprocessor(X,spec.get("preprocessing") or {},task=spec["task"],seed=spec.get("seed",42))
         capabilities=self.catalogue.descriptor(spec["algorithm_id"]).get("capabilities",{})
-        Xt=for_estimator(preprocessing.fit_transform(X),capabilities)
         model=self.catalogue.build(spec["task"],spec["algorithm_id"],spec.get("params"),spec.get("seed",42),spec.get("n_jobs",1))
+        if hasattr(self.catalogue, 'effective_capabilities'): capabilities=self.catalogue.effective_capabilities(model,capabilities)
+        Xt=for_estimator(preprocessing.fit_transform(X),capabilities)
         progress({"type":"progress","progress":.2,"message":"Подготовлена рабочая таблица обучения без учителя"})
         if cancelled():raise InterruptedError("Расчет отменен.")
         if spec["task"]=="reduction": predictions=dense(model.fit_transform(Xt))
-        else:predictions=np.asarray(model.fit_predict(Xt))
+        elif capabilities.get('fit_predict'): predictions=np.asarray(model.fit_predict(Xt))
+        elif capabilities.get('predict'):
+            model.fit(Xt)
+            predictions=np.asarray(model.predict(Xt))
+        else: raise ValueError('Настроенная модель не поддерживает fit_predict или predict для этой задачи.')
         values,details=self.metrics.evaluate(spec["task"],None,predictions,selection=spec.get("metrics"),X=Xt,reference=context.get("reference"),model=model)
         if spec["task"]=="reduction":coordinates=predictions
         else:coordinates=dense(Xt[:,:min(3,Xt.shape[1])])
         embedding={"coordinates":coordinates[:2000].tolist(),"indices":context["indices"][:2000].tolist(),
                    "labels":predictions[:2000].tolist() if spec["task"]!="reduction" else None}
         rows=[{"index":int(index),"predicted":plain(prediction),"coordinates":plain(coordinate)} for index,prediction,coordinate in zip(context["indices"][:2000],predictions[:2000],coordinates[:2000])]
+        names = feature_names(preprocessing, Xt.shape[1])
         result={"evaluations":{"train":{"metrics":values,"metric_details":details,"n_rows":len(X),"rows":rows}},
                 "diagnostics":{"embedding":embedding,"scope":"Вся выбранная рабочая таблица; отдельной оценки новых объектов нет.",
-                    "preprocessing":{"features":list(preprocessing.get_feature_names_out()),"original_features":list(X.columns)}},"trace":[]}
+                    "preprocessing":{"features":names,"original_features":list(X.columns)}},"trace":[]}
         from .diagnostics import build_diagnostics
         extra, diagnostic_warnings = build_diagnostics(
             spec, None, X, None, X, None, self.catalogue, self.metrics, progress=progress, cancelled=cancelled)
@@ -227,4 +236,4 @@ class ExperimentEngine:
         if spec["task"]=="anomaly":
             scores=-np.asarray(model.score_samples(Xt)) if hasattr(model,"score_samples") else -np.asarray(getattr(model,"negative_outlier_factor_",np.zeros(len(Xt))))
             result["diagnostics"]["anomaly_scores"]=scores[:2000].tolist()
-        return result,FittedArtifact(spec["task"],preprocessing,model,list(X.columns),input_capabilities=capabilities)
+        return result,FittedArtifact(spec["task"],preprocessing,model,list(X.columns),input_capabilities=capabilities,transformed_features=names)

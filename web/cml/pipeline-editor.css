@@ -1,0 +1,79 @@
+.cml-pipeline-editor { --pipeline-border: var(--border, #c5bdb0); --pipeline-paper: var(--panel, #f7f2e8); --pipeline-ink: var(--text, #292720); width: 100%; color: var(--pipeline-ink); }
+.cml-pipeline-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.cml-pipeline-workspace { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(340px, 1.1fr); gap: 18px; align-items: start; }
+.cml-pipeline-status { min-height: 1.5em; margin: 8px 0; }
+.cml-pipeline-errors { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--danger, #8e2438); background: var(--pipeline-paper); border-left: 3px solid var(--danger, #8e2438); padding: 12px; }
+.cml-pipeline-errors[hidden], .cml-pipeline-completions[hidden] { display: none; }
+.cml-pipeline-code-shell { position: relative; display: grid; grid-template-columns: 3.4em minmax(0, 1fr); height: 490px; border: 1px solid var(--pipeline-border); background: var(--pipeline-paper); }
+.cml-pipeline-code-shell:focus-within { outline: 2px solid var(--accent, #803748); outline-offset: 2px; }
+.cml-pipeline-line-numbers { box-sizing: border-box; overflow: hidden; white-space: pre; text-align: right; padding: 12px 10px 12px 2px; user-select: none; color: var(--muted, #71695f); border-right: 1px solid var(--pipeline-border); }
+.cml-pipeline-code-layer { position: relative; min-width: 0; height: 100%; overflow: hidden; }
+.cml-pipeline-code-input, .cml-pipeline-code-highlight, .cml-pipeline-line-numbers { font: 14px/1.6 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; tab-size: 4; letter-spacing: 0; }
+.cml-pipeline-code-input, .cml-pipeline-code-highlight { box-sizing: border-box; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 12px; border: 0; border-radius: 0; overflow: auto; white-space: pre; overflow-wrap: normal; word-break: normal; }
+.cml-pipeline-code-highlight { pointer-events: none; color: var(--pipeline-ink); background: transparent; scrollbar-width: none; }
+.cml-pipeline-code-highlight::-webkit-scrollbar { display: none; }
+.cml-pipeline-code-input { resize: none; background: transparent; color: transparent; -webkit-text-fill-color: transparent; caret-color: var(--pipeline-ink); outline: 0; }
+.cml-pipeline-code-input::selection { background: #80374840; }
+.cml-python-keyword { color: #803748; font-weight: 600; }
+.cml-python-class { color: #41527b; }
+.cml-python-string { color: #2f6949; }
+.cml-python-number { color: #8a512b; }
+.cml-python-comment { color: #71695f; font-style: italic; }
+.cml-pipeline-completions { position: absolute; left: 3.4em; right: 12px; bottom: 12px; z-index: 15; margin: 0; padding: 4px; border: 1px solid var(--pipeline-border); background: var(--pipeline-paper); color: var(--pipeline-ink); max-height: 225px; overflow: auto; list-style: none; box-shadow: 0 3px 10px #0002; }
+.cml-pipeline-completions li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 8px; cursor: pointer; }
+.cml-pipeline-completions li[aria-selected=true] { background: var(--accent, #803748); color: #fff; }
+.cml-pipeline-completions li span { font-size: 12px; }
+.cml-pipeline-graph-scroll { overflow: auto; max-height: 680px; border: 1px solid var(--pipeline-border); background: var(--pipeline-paper); }
+.cml-pipeline-svg { display: block; min-width: 100%; font: 13px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.cml-pipeline-edge { stroke: var(--muted, #71695f); fill: none; stroke-width: 1.5; }
+.cml-pipeline-arrow { fill: var(--muted, #71695f); }
+.cml-pipeline-edge-label { fill: var(--pipeline-ink); font-size: 10px; paint-order: stroke; stroke: var(--pipeline-paper); stroke-width: 4px; stroke-linejoin: round; }
+.cml-pipeline-node rect { fill: var(--pipeline-paper); stroke: var(--pipeline-border); stroke-width: 1.5; }
+.cml-pipeline-node text { fill: var(--pipeline-ink); pointer-events: none; }
+.cml-pipeline-node .cml-pipeline-step-name { font-size: 11px; fill: var(--muted, #71695f); }
+.cml-pipeline-node[role=button] { cursor: pointer; }
+.cml-pipeline-svg[data-dragging=true] .cml-pipeline-node[role=button] { cursor: move; }
+.cml-pipeline-node[role=button]:focus { outline: none; }
+.cml-pipeline-node.selected rect, .cml-pipeline-node[role=button]:focus rect { stroke: var(--accent, #803748); stroke-width: 3; }
+.cml-pipeline-node.container rect { stroke-dasharray: 4 2; }
+.cml-pipeline-node.boundary rect { fill: var(--surface, #eee8dd); }
+.cml-pipeline-graph-description { margin: 8px 0 14px; font-size: 13px; }
+.cml-pipeline-step-list { padding-left: 20px; }
+.cml-pipeline-step-row { padding: 4px 0; }
+.cml-pipeline-step-row > button { margin-right: 5px; }
+.cml-pipeline-step-row.drop-target { border-top: 3px solid var(--accent, #803748); }
+.cml-pipeline-step-select { background: transparent; border: 0; color: var(--pipeline-ink); text-align: left; font: inherit; cursor: pointer; }
+.cml-pipeline-step-select:focus-visible { outline: 2px solid var(--accent, #803748); }
+.cml-pipeline-inspector { border-top: 1px solid var(--pipeline-border); padding-top: 10px; }
+.cml-pipeline-inspector .cml-field { margin-bottom: 10px; }
+.cml-pipeline-inspector input:not([type=checkbox]), .cml-pipeline-inspector textarea, .cml-pipeline-inspector select { box-sizing: border-box; width: 100%; }
+.cml-pipeline-default { font: inherit; font-size: 12px; margin-top: 4px; border: 0; padding: 0; background: transparent; color: var(--accent, #803748); cursor: pointer; text-decoration: underline; }
+.cml-pipeline-default:disabled { color: var(--muted, #71695f); cursor: default; text-decoration: none; }
+.cml-pipeline-source-dialog { max-width: 90vw; width: 1000px; max-height: 85vh; background: var(--pipeline-paper, #f7f2e8); color: var(--pipeline-ink, #292720); border: 1px solid var(--pipeline-border, #c5bdb0); padding: 20px; }
+.cml-pipeline-source-dialog::backdrop { background: #0006; }
+.cml-pipeline-library-source { overflow: auto; max-height: 65vh; font: 13px/1.55 ui-monospace, Consolas, monospace; }
+body[data-theme=dark] .cml-python-keyword { color: #e0a4b1; }
+body[data-theme=dark] .cml-python-class { color: #aec0e5; }
+body[data-theme=dark] .cml-python-string { color: #a6c9ac; }
+body[data-theme=dark] .cml-python-number { color: #d8b18c; }
+body[data-theme=dark] .cml-python-comment { color: #b3a99c; }
+.cml-library-card { border: 1px solid var(--line, #c5bdb0); margin-bottom: 12px; background: var(--panel, #f7f2e8); }
+.cml-library-card .cml-entity { border: 0; }
+.cml-library-card > .cml-toolbar { padding: 0 12px 10px; margin: 0; }
+.cml-library-card-summary { padding: 0 12px; font-size: 13px; overflow-wrap: anywhere; }
+.cml-library-card > .cml-button { margin: 0 12px 12px; }
+.cml-library-metrics { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0; }
+.cml-library-metrics caption { text-align: left; padding: 4px 8px; color: var(--muted, #71695f); }
+.cml-library-metrics th, .cml-library-metrics td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line, #c5bdb0); overflow-wrap: anywhere; }
+.cml-library-metrics th .cml-help { margin-left: 6px; }
+.cml-library-metrics td { font-variant-numeric: tabular-nums; }
+.cml-library-pipeline-graph { margin: 8px; }
+.cml-library-pipeline-graph .cml-pipeline-graph-scroll { max-height: 270px; }
+.cml-library-pipeline-graph .cml-pipeline-svg { width: 100%; height: auto; }
+.cml-library-legacy-steps { padding-left: 20px; font-size: 12px; }
+.cml-library-legacy-steps li { padding: 5px 0; }
+.cml-library-dataset-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; }
+.cml-library-dataset-facts dd { margin: 0; overflow-wrap: anywhere; }
+.cml-library-export-format { margin-top: 10px; }
+@media (max-width: 1100px) { .cml-pipeline-workspace { grid-template-columns: minmax(0, 1fr); } .cml-pipeline-code-shell { height: 400px; } }
+@media (forced-colors: active) { .cml-pipeline-code-highlight { display: none; } .cml-pipeline-code-input { color: CanvasText; -webkit-text-fill-color: CanvasText; } .cml-pipeline-node rect { fill: Canvas; stroke: CanvasText; } .cml-pipeline-node text { fill: CanvasText; } }

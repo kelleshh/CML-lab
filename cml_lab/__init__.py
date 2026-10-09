@@ -2,4 +2,4 @@
 import os
 
 os.environ["ORT_DISABLE_TELEMETRY"] = "1"
-__version__ = "3.0.0"
+__version__ = "4.0.0"

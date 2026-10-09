@@ -1,4 +1,4 @@
-# CML-lab: договор команды, версия 3
+# CML-lab: договор команды, версия 4
 
 Основной пакет `cml_lab`, приложение `cml_lab.presentation.http.api:create_app`.
 Модульный монолит: contexts/data, recipes, experiments, execution, learning.
@@ -72,12 +72,40 @@ Engine port `run(spec,progress,cancelled)->RunResult`; adapter сохраняе�
 в переданный execution-owned временный путь; успешный процесс атомарно commit.
 В engine только передаются готовые plain DTO, без HTTP/request/БД объектов.
 
+## Declarative Pipeline, анализ и экспорт
+
+Подготовка допускает либо прежние `steps`, либо `declarative_pipeline`:
+
+```json
+{"steps": [], "declarative_pipeline": {"format": "cml.pipeline", "version": 1, "source": "from sklearn.preprocessing import StandardScaler\npipeline = StandardScaler()\n"}, "pipeline_params": {}, "resampling": {"method": "none"}}
+```
+
+`pipeline_params` содержит effective overrides из выбранной пробы. Пространство поиска использует `pipeline__` перед точным sklearn `get_params(deep=True)` путем. Например `pipeline__numeric__scaler__with_mean`. Overrides заново валидируются и применяются к свежим необученным объектам перед каждым fit.
+
+| HTTP | Контракт |
+|---|---|
+| GET `/api/cml/pipelines/catalogue` | Зарегистрированные классы, native defaults, шаблоны и ограничения деклараций |
+| POST `/api/cml/pipelines/validate` | `{source}`, `{tree}` или `{spec}` → исходник, нормализованный spec, tree, graph, warnings; 422 содержит строку/столбец |
+| GET `/api/cml/pipelines/source?class=StandardScaler` | Исходники установленного зарегистрированного класса |
+| POST `/api/cml/pipelines/parameters` | `{spec}` → параметры глубоких путей с prefix `pipeline__` и контекстной помощью |
+| POST `/api/cml/pipelines/export?format=py\|json` | `{spec}` → portable исходник или `cml.pipeline` version 1 |
+| GET `/api/cml/preprocessor-recipes/{id}/export?format=py\|json` | Точное effective построение с сохраненными pipeline overrides |
+| POST `/api/cml/search/preset` | `{task,algorithm_id,params,breadth:1..5}` → проверенное param_space, combinations, trials |
+| GET `/api/cml/analysis/kinds` | 20 описаний видов анализа |
+| POST `/api/cml/analysis` | `{dataset_id,kind,columns,options}` → статистики, Plotly traces, scope и объяснение |
+| POST `/api/cml/project-exports?format=py\|ipynb` | `{name,spec}` → текущий разрешенный проект и исходные данные |
+| GET `/api/cml/projects/{id}/export?format=py\|ipynb&revision=…` | Выбранная ревизия проекта |
+| GET `/api/cml/runs/{id}/project-export?format=py\|ipynb` | Неизменный снимок запуска |
+| GET `/api/cml/experiments/{id}/project-export?format=py\|ipynb` | Сохраненный снимок эксперимента |
+
+Поддерживаются декларации registered sklearn constructors, литералы, селекторы и разрешенные numpy references. Произвольный Python не исполняется. Портируемый Pipeline не содержит fitted state; проект использует установленное окружение CML-lab. F-beta получает `metric_params.beta` и `metric_params.average`; ranking использует `metric_params.k`.
+
 ## Учебник
 
 GET `/api/learning/lessons`, GET `/api/learning/lessons/{id}`,
-GET `/api/learning/help/{key}`. HTML `/lesson?id=stable-id` открывается отдельной
+GET `/api/learning/help/{key}`. HTML `/lesson?id=stable-id#param-key` открывается отдельной
 вкладкой; `?` имеет доступное название и ссылку `target=_blank rel=noopener`.
-У каждого нового алгоритма/stage/настройки есть lesson_id и содержательное help.
+У каждого алгоритма, stage и параметра есть lesson_id и содержательное help. Каталог reference lessons передает summaries, полное тело загружается по ID. Параметры Pipeline используют section.anchor; тела старых preset lessons остаются совместимыми.
 
 ## Владение
 

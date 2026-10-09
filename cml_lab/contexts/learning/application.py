@@ -70,4 +70,5 @@ class LearningService:
 
     def catalogue(self) -> list[dict[str, Any]]:
         """Полные записи для клиентов, применяющих учебные рецепты из каталога."""
-        return [_lesson_payload(lesson) for lesson in self._repository.lessons()]
+        return [(_summary(lesson) | {"preset": None}) if lesson.level == "reference"
+                else _lesson_payload(lesson) for lesson in self._repository.lessons()]

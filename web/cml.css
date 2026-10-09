@@ -72,8 +72,8 @@ label { color: var(--text); font-size: .92rem; }
 .cml-button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .cml-button.danger { color: var(--danger); border-color: var(--danger); }
 .cml-icon { min-width: 42px; min-height: 42px; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--text); }
-.cml-steps { display: flex; align-items: stretch; border: 1px solid var(--line); background: var(--panel); margin-bottom: 20px; }
-.cml-step { flex: 1; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; text-align: left; min-height: 58px; }
+.cml-steps { overflow-x: auto; display: flex; align-items: stretch; border: 1px solid var(--line); background: var(--panel); margin-bottom: 20px; }
+.cml-step { min-width: 130px; flex: 1; display: flex; align-items: center; gap: 10px; padding: 14px 18px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; text-align: left; min-height: 58px; }
 .cml-step:last-child { border-right: 0; }
 .cml-step[aria-selected=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); box-shadow: inset 0 -3px var(--accent); }
 .cml-step-number { font-variant-numeric: tabular-nums; font-weight: 700; }

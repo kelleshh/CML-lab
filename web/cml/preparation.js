@@ -2,16 +2,18 @@ import { element, formatNumber } from './dom.js';
 import { action, field, heading, notice, select, setOptions } from './controls.js';
 import { SchemaForm } from './schema-form.js';
 import { helpButton } from './help.js';
+import { renderPipelineEditor } from './pipeline-editor.js';
 
 export class PreparationBuilder {
-  constructor({ api, getRequest, onChange, onError, catalogue = {} }) {
+  constructor({ api, getRequest, onChange = () => {}, onError = () => {}, onSavePipeline = () => {}, catalogue = {} }) {
     this.api = api; this.getRequest = getRequest; this.onChange = onChange; this.onError = onError;
     this.catalogue = catalogue; this.steps = []; this.forms = []; this.dataset = null; this.task = 'regression';
     this.resampling = { method: 'none' };
+    this.mode = 'legacy'; this.declarativePipeline = null; this.pipelineDraft = null; this.pipelineParams = {}; this.onSavePipeline = onSavePipeline;
   }
 
   mount(container) { this.container = container; this.render(); return this; }
-  setCatalogue(catalogue) { this.catalogue = catalogue; this.render(); }
+  setCatalogue(catalogue) { this.capture(); this.catalogue = catalogue; this.render(); }
   setDataset(dataset) { this.capture(); this.dataset = dataset; this.render(); }
   setTask(task) { this.capture(); this.task = task; this.render(); }
 
@@ -28,19 +30,47 @@ export class PreparationBuilder {
   }
 
   values() {
-    return { steps: this.steps.map((step, index) => ({ ...step, params: this.forms[index]?.values() || step.params || {} })), resampling: { ...this.resampling, ...(this.samplerForm?.values() || {}) } };
+    const common = { resampling: { ...this.resampling, ...(this.samplerForm?.values() || {}) } };
+    if (this.isDeclarative()) {
+      if (!this.pipelineEditor?.isValid()) throw new Error('Pipeline Python не применен или содержит ошибку. Нажмите «Применить Python» и исправьте сообщение редактора.');
+      return { steps: [], ...common, declarative_pipeline: this.pipelineEditor.getSpec(), pipeline_params: structuredClone(this.pipelineParams) };
+    }
+    return { steps: this.steps.map((step, index) => ({ ...step, params: this.forms[index]?.values() || step.params || {} })), ...common };
+  }
+
+  isDeclarative() { return this.mode === 'declarative'; }
+  currentSpec() { return this.isDeclarative() ? structuredClone(this.declarativePipeline) : null; }
+  valid() { return this.isDeclarative() ? Boolean(this.pipelineEditor?.isValid() && this.samplerForm?.valid()) : this.forms.every(form => form.valid()) && (this.samplerForm?.valid() ?? true); }
+  draftValues() {
+    this.capture();
+    if (this.isDeclarative()) return { steps: [], resampling: structuredClone(this.resampling), declarative_pipeline: { format: 'cml.pipeline', version: 1, ...this.declarativePipeline, source: this.pipelineDraft ?? this.declarativePipeline?.source ?? '' }, pipeline_params: structuredClone(this.pipelineParams) };
+    return { steps: structuredClone(this.steps), resampling: structuredClone(this.resampling) };
   }
 
   setConfig(config = {}) {
     this.steps = structuredClone(config.steps || []);
     this.resampling = structuredClone(config.resampling || { method: 'none' });
+    const declarative = config.declarative_pipeline || config.pipeline || (config.format === 'cml.pipeline' ? config : null);
+    this.mode = declarative ? 'declarative' : 'legacy';
+    this.declarativePipeline = declarative ? structuredClone(typeof declarative === 'string' ? { format: 'cml.pipeline', version: 1, source: declarative } : declarative) : null;
+    this.pipelineDraft = this.declarativePipeline?.source ?? null;
+    this.pipelineParams = structuredClone(config.pipeline_params || {});
     this.render();
   }
 
-  capture() { this.steps = this.values().steps; this.resampling = this.values().resampling; }
+  capture() {
+    try { this.steps = this.steps.map((step, index) => ({ ...step, params: this.forms[index]?.values() || step.params || {} })); } catch { /* Keep editable configuration while switching dataset or task. */ }
+    try { this.resampling = { ...this.resampling, ...(this.samplerForm?.values() || {}) }; } catch { /* Preserve the last sampler configuration until the form is valid. */ }
+    if (this.pipelineEditor) this.pipelineDraft = this.pipelineEditor.getSource();
+  }
 
   render() {
     if (!this.container) return;
+    this.pipelineEditor?.destroy(); this.pipelineEditor = null;
+    const mode = select([{ value: 'legacy', label: 'Legacy steps' }, { value: 'declarative', label: 'sklearn Pipeline' }], this.mode, { 'aria-label': 'Preprocessing editor mode' });
+    mode.addEventListener('change', () => { this.capture(); this.mode = mode.value; this.render(); this.onChange(); });
+    const modePanel = element('section', { className: 'cml-panel' }, [heading('Preprocessing Pipeline', { help: 'Legacy steps сохраняет обычный конструктор этапов. sklearn Pipeline открывает Python и графический конструктор ветвей; преобразования обучаются внутри train.', lesson_id: 'cml-declarative-pipeline' }), field('editor', mode, { help: 'Режимы подготовки взаимоисключающие. При смене режима черновик второго редактора остается доступным в текущей сессии.', lesson_id: 'cml-declarative-pipeline' })]);
+    const pipelineHost = element('section', { className: 'cml-panel cml-preparation-pipeline', hidden: !this.isDeclarative() });
     const allowed = this.descriptors().filter(item => !item.allowed_tasks?.length || item.allowed_tasks.includes(this.task));
     const chooser = select(allowed.map(item => ({ value: item.id, label: `${item.name || item.id}${item.available === false ? ' — недоступен' : ''}`, disabled: item.available === false })), allowed.find(item => item.available !== false)?.id || '');
     const stageList = element('div', { className: 'cml-preparation-stages' });
@@ -96,18 +126,31 @@ export class PreparationBuilder {
     const preview = action('Посмотреть данные после подготовки', () => this.preview(), 'primary');
     this.previewButton = preview;
     this.previewContainer = element('div', { className: 'cml-panel' }, [heading('Предпросмотр подготовки', { help: 'Преобразования обучаются только на тренировочных строках. Проверочные строки не участвуют в расчете средних, категорий и новых примеров.', lesson_id: '25-data-leakage' }), element('p', { className: 'cml-empty', text: 'Добавьте этапы и нажмите кнопку предпросмотра. Здесь будут реальные преобразованные значения.' })]);
-    this.container.replaceChildren(element('div', { className: 'cml-workspace wide-form' }, [
+    const legacyConstructor = element('div', { hidden: this.isDeclarative() }, [element('section', { className: 'cml-panel' }, [heading('Конструктор подготовки', { help: 'Этапы выполняются по порядку. Сохраняйте удачную последовательность как Pipeline в библиотеке.', lesson_id: '24-feature-engineering' }),
+      field('Добавить преобразование', chooser, { help: 'Каждый этап меняет определенные столбцы или отбирает признаки. Для категориального текста доступны свои адаптеры.', lesson_id: '24-feature-engineering' }),
+      action('Добавить этап', () => { this.capture(); if (!chooser.value) return; this.steps.push({ adapter_id: chooser.value, enabled: true, columns: [], params: {} }); this.render(); this.onChange(); }),
+      notice('Если этапы не добавлены, используются безопасные базовые преобразования. Точные правила показаны в предпросмотре и паспорте запуска.'),
+    ]), stageList]);
+    const workspace = element('div', { className: 'cml-workspace wide-form' }, [
       element('div', {}, [
-        element('section', { className: 'cml-panel' }, [heading('Конструктор подготовки', { help: 'Этапы выполняются по порядку. Сохраняйте удачную последовательность как препроцессор в библиотеке.', lesson_id: '24-feature-engineering' }),
-          field('Добавить преобразование', chooser, { help: 'Каждый этап меняет определенные столбцы или отбирает признаки. Для категориального текста доступны свои адаптеры.', lesson_id: '24-feature-engineering' }),
-          action('Добавить этап', () => { this.capture(); if (!chooser.value) return; this.steps.push({ adapter_id: chooser.value, enabled: true, columns: [], params: {} }); this.render(); this.onChange(); }),
-          notice('Если этапы не добавлены, используются безопасные базовые преобразования. Точные правила показаны в предпросмотре и паспорте запуска.'),
-        ]), stageList,
+        legacyConstructor,
         element('section', { className: 'cml-panel' }, [heading('Баланс обучающих строк', { help: 'Добавление и удаление строк относится только к обучающей части. У проверочных данных сохраняется исходное распределение.', lesson_id: this.task === 'classification' ? 'classification-resampling' : '28-rare-target-smoter' }),
           field('Изменение количества строк', sampler, { help: 'Повторение, удаление или создание строк может помочь редким ответам. Сравните результат без изменения данных.', lesson_id: this.task === 'classification' ? 'classification-resampling' : '28-rare-target-smoter' }), samplerFormContainer,
         ]), element('div', { className: 'cml-toolbar' }, [preview, action('Очистить этапы', () => { this.setConfig({}); this.onChange(); })]),
       ]), this.previewContainer,
-    ]));
+    ]);
+    this.container.replaceChildren(element('div', { className: 'cml-preparation-builder' }, [modePanel, pipelineHost, workspace]));
+    if (this.isDeclarative()) {
+      const controller = renderPipelineEditor(pipelineHost, {
+        api: this.api, source: this.pipelineDraft ?? this.declarativePipeline?.source,
+        ...(this.declarativePipeline?.tree ? { tree: this.declarativePipeline.tree } : {}), columns: this.dataset?.columns || [],
+        onDraftChange: source => { this.pipelineDraft = source; this.onChange(); },
+        onChange: result => { this.declarativePipeline = result.spec; this.pipelineDraft = result.source; this.onChange(); },
+        onSave: result => this.onSavePipeline(result), onError: error => { this.onError(error); this.onChange(); },
+      });
+      this.pipelineEditor = controller;
+      controller.ready.then(result => { if (this.pipelineEditor !== controller) return; if (result) { this.declarativePipeline = result.spec; this.pipelineDraft = result.source; } this.onChange(); });
+    }
   }
 
   async preview() {
@@ -127,4 +170,6 @@ export class PreparationBuilder {
     } catch (error) { this.onError(error); }
     finally { this.previewButton.disabled = false; }
   }
+
+  destroy() { this.pipelineEditor?.destroy(); this.container?.replaceChildren(); this.container = null; }
 }

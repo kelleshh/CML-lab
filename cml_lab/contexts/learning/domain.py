@@ -29,6 +29,7 @@ class LessonSection:
     title: str
     text: str
     formula: str | None = None
+    anchor: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

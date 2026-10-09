@@ -1,24 +1,26 @@
 import { element } from './dom.js';
 import { action, checkbox, field, heading, notice, number, select, setOptions } from './controls.js';
+import { parseChoices, searchDefinition } from './search-space.js';
 
 const STRATEGIES = [
   { value: 'none', label: 'Одна обучающая и одна проверочная часть' },
-  { value: 'kfold', label: 'K-fold: несколько частей' },
-  { value: 'stratified_kfold', label: 'Stratified K-fold: сохранить доли классов' },
-  { value: 'repeated_kfold', label: 'Повторить K-fold с разными разделениями' },
-  { value: 'shuffle_split', label: 'Несколько случайных разделений' },
-  { value: 'group_kfold', label: 'K-fold по целым группам' },
-  { value: 'group_shuffle_split', label: 'Случайное разделение целых групп' },
-  { value: 'leave_one_group_out', label: 'По очереди отложить каждую группу' },
-  { value: 'timeseries', label: 'По времени: обучаться на прошлом' },
-  { value: 'leave_one_out', label: 'По очереди отложить каждую строку' },
+  { value: 'kfold', label: 'KFold' },
+  { value: 'stratified_kfold', label: 'StratifiedKFold' },
+  { value: 'repeated_kfold', label: 'RepeatedKFold' },
+  { value: 'shuffle_split', label: 'ShuffleSplit' },
+  { value: 'group_kfold', label: 'GroupKFold' },
+  { value: 'group_shuffle_split', label: 'GroupShuffleSplit' },
+  { value: 'leave_one_group_out', label: 'LeaveOneGroupOut' },
+  { value: 'timeseries', label: 'TimeSeriesSplit' },
+  { value: 'leave_one_out', label: 'LeaveOneOut' },
   { value: 'stratified_bins', label: 'Сохранить области числовой цели' },
 ];
 
 export class ValidationBuilder {
-  constructor({ catalogue, onChange, onError }) {
+  constructor({ catalogue, onChange, onError, api, getModelConfig }) {
     this.catalogue = catalogue; this.onChange = onChange; this.onError = onError;
     this.task = 'regression'; this.model = null; this.saved = {}; this.searchRows = [];
+    this.api = api; this.getModelConfig = getModelConfig; this.pipelineParameters = [];
   }
 
   mount(container) { this.container = container; this.render(); return this; }
@@ -40,21 +42,16 @@ export class ValidationBuilder {
     const metrics = [...this.metricList.querySelectorAll('input:checked')].map(control => control.value);
     const search = this.searchEnabled.checked ? {
       method: this.searchMethod.value, trials: Number(this.trials.value), metric: this.searchMetric.value,
-      direction: this.direction.value, param_space: Object.fromEntries(this.searchRows.filter(row => row.key.value).map(row => {
-        const raw = row.values.value.split(/[,;]+/).map(value => value.trim()).filter(Boolean);
-        const schema = (this.model?.params || []).find(param => param.key === row.key.value);
-        const values = raw.map(value => ['int', 'integer', 'float', 'number'].includes(schema?.type) ? Number(value) : ['bool', 'boolean'].includes(schema?.type) ? value === 'true' : value);
-        return [row.key.value, values];
-      })),
+      direction: this.direction.value, param_space: Object.fromEntries(this.searchRows.filter(row => row.key.value).map(row => [row.key.value, searchDefinition(row, this.parameters().find(param => param.key === row.key.value))])),
     } : null;
-    return { regularization_path: this.diagnostics?.regularization_path?.checked || false, learning_curve: this.diagnostics?.learning_curve?.checked || false, permutation_importance: this.diagnostics?.permutation_importance?.checked || false, split, validation, search, metrics, seed: Number(this.seed.value), n_jobs: Number(this.jobs.value), custom_metric: this.custom.value.trim() || undefined };
+    return { regularization_path: this.diagnostics?.regularization_path?.checked || false, learning_curve: this.diagnostics?.learning_curve?.checked || false, permutation_importance: this.diagnostics?.permutation_importance?.checked || false, split, validation, search, metrics, metric_params: { ...(this.saved.metric_params || {}), beta: Number(this.beta?.value || 1), average: this.average?.value || 'macro', k: Number(this.topK?.value || 10) }, seed: Number(this.seed.value), n_jobs: Number(this.jobs.value), search_breadth: Number(this.breadth.value), custom_metric: this.custom.value.trim() || undefined };
   }
 
   setConfig(config = {}) {
     this.saved = structuredClone(config);
     this.render();
     if (config.search?.param_space) {
-      this.searchRows = Object.entries(config.search.param_space).map(([key, values]) => ({ savedKey: key, savedValues: Array.isArray(values) ? values.join(', ') : `${values.low}, ${values.high}` }));
+      this.searchRows = Object.entries(config.search.param_space).map(([key, values]) => ({ savedKey: key, savedDefinition: values }));
       this.renderSearchRows();
     }
   }
@@ -100,13 +97,18 @@ export class ValidationBuilder {
     this.searchEnabled.disabled = unsupervised;
     if (unsupervised) this.searchEnabled.checked = false;
     this.searchMethod = select([
-      { value: 'grid', label: 'Перебрать все комбинации' }, { value: 'random', label: 'Случайно выбрать комбинации' },
-      { value: 'optuna_tpe', label: 'Optuna TPE: использовать прошлые результаты' }, { value: 'optuna_random', label: 'Optuna: случайный поиск' },
-      { value: 'halving_grid', label: 'Поэтапно сокращать сетку кандидатов' }, { value: 'halving_random', label: 'Поэтапно сокращать случайные кандидаты' },
+      { value: 'grid', label: 'GridSearch' }, { value: 'random', label: 'RandomizedSearch' },
+      { value: 'optuna_tpe', label: 'Optuna TPESampler' }, { value: 'optuna_random', label: 'Optuna RandomSampler' },
+      { value: 'halving_grid', label: 'Successive Halving / Grid' }, { value: 'halving_random', label: 'Successive Halving / Random' },
     ], config.search?.method || 'optuna_tpe');
     this.trials = number(config.search?.trials ?? 12, { min: 1, max: 100, step: 1 });
     this.searchMetric = select(metrics.map(metric => ({ value: metric.id, label: metric.name || metric.label || metric.id })), config.search?.metric || selectedMetrics[0]);
     this.direction = select([{ value: 'auto', label: 'Взять из описания метрики' }, { value: 'min', label: 'Меньше — лучше' }, { value: 'max', label: 'Больше — лучше' }], config.search?.direction || 'auto');
+    this.breadth = element('input', { type: 'range', min: 1, max: 5, step: 1, value: config.search_breadth || 2 });
+    this.breadthOutput = element('output', { text: ['Tiny', 'Small', 'Medium', 'Large', 'Wide'][Number(this.breadth.value)-1] });
+    this.breadth.addEventListener('input', () => { this.breadthOutput.textContent = ['Tiny', 'Small', 'Medium', 'Large', 'Wide'][Number(this.breadth.value)-1]; });
+    this.breadth.addEventListener('change', () => this.applyPreset());
+    this.searchBudget = element('p', { className: 'cml-note', role: 'status' });
     this.searchRowsContainer = element('div');
     this.renderSearchRows();
     const validationPanel = element('section', { className: 'cml-panel' }, [
@@ -127,6 +129,8 @@ export class ValidationBuilder {
     if (unsupervised) validationPanel.replaceChildren(heading('Расчет без учителя', { help: 'Алгоритм работает с выбранным рабочим датасетом. Известные классы могут использоваться только для независимой оценки найденных групп.', lesson_id: this.task === 'clustering' ? 'clustering-basics' : this.task === 'anomaly' ? 'anomaly-detection' : 'dimensionality-reduction' }), notice('Метрики относятся к рабочему датасету. Отдельной проверки качества на новых объектах у этого расчета нет.'), field('Зерно случайности', this.seed, { help: 'Помогает воспроизвести начальные условия алгоритма.', lesson_id: '26-cross-validation' }), field('Параллельные вычисления', this.jobs, { help: 'Количество вычислительных потоков.', lesson_id: '27-hyperparameter-search' }));
     const searchPanel = element('section', { className: 'cml-panel' }, [
       heading('Подбор гиперпараметров', { help: 'Гиперпараметры задают поведение алгоритма до обучения: глубину дерева, силу штрафа, количество соседей.', lesson_id: '27-hyperparameter-search' }), searchEnabled.wrapper,
+      field('Search breadth', this.breadth, { help: 'Готовая сетка от Tiny до Wide. Большой уровень проверяет больше значений и параметров. Сетка остается редактируемой; лучшую комбинацию определяют только обучающие данные.', lesson_id: '27-hyperparameter-search' }), this.breadthOutput,
+      action('Создать готовую сетку', () => this.applyPreset()), this.searchBudget,
       element('div', { className: 'cml-form-grid' }, [
         field('Метод поиска', this.searchMethod, { help: 'Сетка проверяет перечисленные значения. Случайный поиск пробует часть комбинаций. Optuna использует предыдущие результаты.', lesson_id: '27-hyperparameter-search' }),
         field('Количество проб', this.trials, { help: 'Одна проба означает одну комбинацию настроек. С перекрестной проверкой каждая проба обучает несколько моделей.', lesson_id: '27-hyperparameter-search' }),
@@ -142,6 +146,11 @@ export class ValidationBuilder {
       action('Выбрать все метрики', () => { this.metricList.querySelectorAll('input').forEach(control => { control.checked = true; }); this.onChange(); }), this.metricList,
       field('Своя формула метрики', this.custom, { help: 'y — настоящий ответ; pred — прогноз; error = y − pred. Для числовой задачи доступны mean, abs, sqrt, sum, min, max, log, exp, clip.', lesson_id: '20-metrics-experiment' }),
     ]);
+    this.beta = number(config.metric_params?.beta ?? 1, { min: .001, max: 100, step: 'any' });
+    this.average = select(['macro', 'weighted', 'micro', 'binary'].map(value => ({ value, label: value })), config.metric_params?.average || 'macro');
+    this.topK = number(config.metric_params?.k ?? 10, { min: 1, max: 1000, step: 1 });
+    if (this.task === 'classification') metricsPanel.append(field('beta', this.beta, { help: 'Для F-beta: beta=2 сильнее учитывает Recall, beta=0.5 — Precision; beta=1 совпадает с F1.', lesson_id: 'fbeta-metrics' }), field('average', this.average, { help: 'Режим F-beta без суффикса. macro дает каждому классу одинаковый вес; weighted учитывает его размер; micro объединяет счетчики; binary оценивает положительный класс.', lesson_id: 'fbeta-metrics' }));
+    if (this.task === 'ranking') metricsPanel.append(field('k', this.topK, { help: 'Глубина списка для NDCG@k, MAP@k и MRR@k. Например k=10 оценивает первые десять объектов каждого запроса.', lesson_id: 'ranking-metrics' }));
     this.diagnostics = {};
     const diagnosticDefinitions = [
       ['regularization_path', 'Как сила штрафа меняет модель', 'Обучает отдельную модель для каждой силы штрафа. Показывает коэффициенты и качество. Это разные задачи оптимизации, а не шаги обучения одной модели.', '06-ridge'],
@@ -156,22 +165,73 @@ export class ValidationBuilder {
     }
     diagnosticPanel.append(notice('Исследования поддерживают независимые строки регрессии и классификации. Для временных рядов, связанных групп и других задач требуется отдельная постановка; ее ограничения показываются в результате. Расчет может занять больше времени.'));
     this.container.replaceChildren(element('div', { className: 'cml-workspace wide-form' }, [element('div', {}, [validationPanel, diagnosticPanel]), element('div', {}, [metricsPanel, searchPanel])]));
-    this.container.querySelectorAll('input,select').forEach(control => control.addEventListener('change', () => this.onChange()));
+    this.container.querySelectorAll('input,select').forEach(control => control.addEventListener('change', () => { this.updateBudget(); this.onChange(); }));
+    this.updateBudget();
   }
 
   renderSearchRows() {
     if (!this.searchRowsContainer) return;
-    const parameters = (this.model?.params || []).filter(param => ['int', 'integer', 'float', 'number', 'select', 'choice', 'bool', 'boolean'].includes(param.type));
+    const parameters = this.parameters();
     this.searchRowsContainer.replaceChildren(...this.searchRows.map((row, index) => {
       row.savedKey = row.key?.value ?? row.savedKey;
       row.savedValues = row.values?.value ?? row.savedValues;
+      if (row.mode) { try { row.savedDefinition = searchDefinition(row, parameters.find(param => param.key === row.savedKey)); } catch { /* Preserve editable invalid input. */ } }
       row.key = select([{ value: '', label: 'Выберите параметр' }, ...parameters.map(param => ({ value: param.key, label: param.label || param.key }))], row.savedKey);
-      row.values = element('input', { value: row.savedValues || '', placeholder: '0.1, 1, 10', 'aria-label': 'Значения параметра через запятую' });
+      const schema = parameters.find(param => param.key === row.savedKey) || {};
+      const definition = row.savedDefinition;
+      row.mode = select([{ value: 'choices', label: 'Choices / Grid' }, { value: 'int', label: 'Integer range' }, { value: 'float', label: 'Float range' }], Array.isArray(definition) || !definition ? 'choices' : definition.type);
+      row.values = element('input', { value: Array.isArray(definition) ? JSON.stringify(definition) : row.savedValues || '', placeholder: '[0.1, 1, 10]', 'aria-label': 'Значения параметра через запятую или JSON' });
+      row.low = number(definition?.low ?? schema.min ?? .01, { step: 'any' });
+      row.high = number(definition?.high ?? schema.max ?? 10, { step: 'any' });
+      row.log = element('input', { type: 'checkbox', checked: Boolean(definition?.log) });
+      const choices = field('values', row.values, { help: 'Список JSON сохраняет числа, bool, null и вложенные массивы. Простые варианты можно писать через запятую.', lesson_id: schema.lesson_id || '27-hyperparameter-search' });
+      const range = element('div', { className: 'cml-form-grid' }, [field('low', row.low, { help: 'Нижняя граница диапазона. Для log она должна быть положительной.', lesson_id: '27-hyperparameter-search' }), field('high', row.high, { help: 'Верхняя граница диапазона, строго больше low.', lesson_id: '27-hyperparameter-search' }), field('log', row.log, { help: 'Проверять разные порядки величины. Подходит alpha и C; для int поддерживается в Optuna.', lesson_id: '27-hyperparameter-search' })]);
+      const visibility = () => { choices.hidden = row.mode.value !== 'choices'; range.hidden = row.mode.value === 'choices'; this.updateBudget(); };
+      row.mode.addEventListener('change', () => { visibility(); this.onChange(); }); visibility();
+      for (const control of [row.key, row.values, row.low, row.high, row.log]) control.addEventListener('change', () => { this.updateBudget(); this.onChange(); });
       return element('div', { className: 'cml-search-row' }, [
-        field('Параметр', row.key, { help: 'Выберите настройку, которую поиск будет менять.', lesson_id: '27-hyperparameter-search' }),
-        field('Проверяемые значения', row.values, { help: 'Для чисел: 0.1, 1, 10. Для переключателей: true, false. Для списков используйте точные значения из описания модели.', lesson_id: '27-hyperparameter-search' }),
+        field('Parameter', row.key, { help: schema.help || 'Выберите настройку модели или pipeline__ параметр вложенного преобразования.', lesson_id: schema.lesson_id || '27-hyperparameter-search' }),
+        field('Distribution', row.mode, { help: 'Grid требует перечисленные значения; RandomizedSearch и Optuna поддерживают числовые диапазоны.', lesson_id: '27-hyperparameter-search' }), choices, range,
         action('Удалить', () => { this.searchRows.splice(index, 1); this.renderSearchRows(); }),
       ]);
     }));
+  }
+
+  parameters() { return [...(this.model?.params || []), ...this.pipelineParameters].filter(param => param.searchable !== false); }
+
+  async setPipeline(spec) {
+    const generation = this.pipelineGeneration = (this.pipelineGeneration || 0) + 1;
+    this.pipelineParameters = [];
+    if (spec && this.api) {
+      try { const result = await this.api.request('/cml/pipelines/parameters', { method: 'POST', body: { spec } }); if (generation !== this.pipelineGeneration) return; this.pipelineParameters = result.params || []; }
+      catch (error) { if (generation === this.pipelineGeneration) this.onError(error); }
+    }
+    if (generation !== this.pipelineGeneration) return;
+    this.renderSearchRows();
+  }
+
+  async applyPreset() {
+    if (!this.api || !this.model) return;
+    try {
+      const preset = await this.api.request('/cml/search/preset', { method: 'POST', body: { task: this.task, algorithm_id: this.model.id, params: this.getModelConfig?.().params || {}, breadth: Number(this.breadth.value) } });
+      this.searchRows = Object.entries(preset.param_space).map(([key, definition]) => ({ savedKey: key, savedDefinition: definition }));
+      this.trials.value = preset.trials; this.searchEnabled.checked = true;
+      this.renderSearchRows(); this.updateBudget(); this.onChange();
+    } catch (error) { this.onError(error); }
+  }
+
+  updateBudget() {
+    if (!this.searchBudget || !this.folds) return;
+    try {
+      let combinations = 1, ranges = false;
+      for (const row of this.searchRows) {
+        if (!row.key?.value) continue;
+        const definition = searchDefinition(row, this.parameters().find(param => param.key === row.key.value));
+        if (Array.isArray(definition)) combinations *= definition.length; else ranges = true;
+      }
+      const trials = this.searchMethod.value.endsWith('grid') ? combinations : Math.min(Number(this.trials.value), ranges ? Infinity : combinations);
+      const folds = this.strategy.value === 'none' ? 3 : Number(this.folds.value) * (this.strategy.value === 'repeated_kfold' ? Number(this.repeats.value) : 1);
+      this.searchBudget.textContent = `Candidates: ${ranges ? 'range' : combinations} · Trials: ${trials} · CV fits: ${trials * folds}${trials > 100 || trials * folds > 500 ? ' · Бюджет превышен: максимум 100 проб и 500 обучений.' : ''}`;
+    } catch (error) { this.searchBudget.textContent = error.message; }
   }
 }

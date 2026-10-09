@@ -27,7 +27,7 @@ MAX_FITS = 500
 METHODS = ("grid", "random", "optuna_tpe", "optuna_random", "halving_grid", "halving_random")
 _ALIASES = {"optuna": "optuna_tpe", "tpe": "optuna_tpe", "halving": "halving_grid"}
 _SUPPORTED_TASKS = {"regression", "classification", "ranking", "forecasting", "panel"}
-_PROBABILITY_METRICS = {"log_loss", "roc_auc", "average_precision", "brier"}
+_PROBABILITY_METRICS = {"log_loss", "roc_auc", "roc_auc_weighted", "roc_auc_ovo", "average_precision", "brier"}
 
 
 def _check(cancelled):
@@ -77,6 +77,13 @@ def _settings(spec, metrics):
 
 def _space(spec, config, catalogue):
     schema = {item["key"]: item for item in catalogue.descriptor(spec["algorithm_id"])["params"]}
+    pipeline = None
+    preprocessing = spec.get('preprocessing') or {}
+    if preprocessing.get('declarative_pipeline'):
+        from .pipelines import compile_pipeline
+        pipeline = compile_pipeline(preprocessing['declarative_pipeline'])
+        pipeline.set_params(**preprocessing.get('pipeline_params', {}))
+        schema.update({'pipeline__' + key: {} for key in pipeline.get_params(deep=True)})
     raw = config.get("param_space", config.get("space"))
     if not isinstance(raw, dict) or not raw or len(raw) > 12:
         raise ValueError("Выберите от 1 до 12 параметров и задайте варианты или диапазоны поиска.")
@@ -120,7 +127,14 @@ def _space(spec, config, catalogue):
         else:
             probes = [item["low"], item["high"]]
         for value in probes:
-            catalogue.build(spec["task"], spec["algorithm_id"], {**base, name: value}, spec.get("seed", 42), 1)
+            if name.startswith('pipeline__'):
+                from sklearn.base import clone
+                candidate = clone(pipeline).set_params(**{name[len('pipeline__'):]: value})
+                for key, estimator in candidate.get_params(deep=True).items():
+                    if hasattr(estimator, '_validate_params'): estimator._validate_params()
+                if hasattr(candidate, '_validate_params'): candidate._validate_params()
+            else:
+                catalogue.build(spec["task"], spec["algorithm_id"], {**base, name: value}, spec.get("seed", 42), 1)
         result[name] = item
     return result
 

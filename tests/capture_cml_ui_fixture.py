@@ -18,6 +18,9 @@ from cml_lab.infrastructure.ml.engine import ExperimentEngine
 from cml_lab.infrastructure.ml.metrics import TaskMetrics
 from cml_lab.infrastructure.ml.preparation_schema import PreparationCatalogue
 from cml_lab.infrastructure.preparation_preview import PreparationPreviewGateway
+from cml_lab.infrastructure.ml.pipelines import pipeline_catalogue, describe_pipeline
+from cml_lab.infrastructure.analysis import DatasetAnalysis
+from cml_lab.infrastructure.ml.search_presets import search_preset
 
 
 def capture():
@@ -26,16 +29,18 @@ def capture():
         algorithms = AlgorithmCatalogue()
         preparation = PreparationCatalogue()
         metrics = TaskMetrics()
-        learning = LearningService(InMemoryLearningRepository(algorithms=algorithms.catalogue(), stages=preparation.stages() + preparation.samplers(), metrics=metrics.catalogue()))
+        learning = LearningService(InMemoryLearningRepository(algorithms=algorithms.catalogue(), stages=preparation.stages() + preparation.samplers(), metrics=metrics.catalogue(), pipeline_classes=pipeline_catalogue()['classes']))
         catalogue = CatalogueApplication(algorithms, data, preparation, metrics, learning).get()
-        fixture = {"catalogue": catalogue, "lessons": learning.list_lessons(), "datasets": {}, "results": {}, "previews": {}, "explorations": {}, "rows": {}, "capabilities": {}}
+        fixture = {"catalogue": catalogue, "lessons": learning.list_lessons(), "datasets": {}, "results": {}, "previews": {}, "explorations": {}, "rows": {}, "capabilities": {}, "analyses": {}, "pipeline_catalogue": pipeline_catalogue(), "search_presets": {str(level): search_preset(algorithms, {'task': 'regression', 'algorithm_id': 'ridge', 'breadth': level}) for level in range(1, 6)}}
         choices = {"regression": "ridge", "classification": "decision_tree_classifier", "clustering": "kmeans", "ranking": "xgboost_ranker", "forecasting": "ridge", "panel": "ridge", "anomaly": "isolation_forest", "reduction": "pca"}
         engine = ExperimentEngine(data, algorithms)
         artifacts = LocalArtifactGateway(Path(directory), algorithms, data)
         preview = PreparationPreviewGateway(data, algorithms)
+        analysis = DatasetAnalysis(data)
         for task, algorithm in choices.items():
             metadata = data.load({"kind": "synthetic", "name": "linear" if task == "regression" else task, "params": {"n_samples": 80 if task != "panel" else 150, "n_features": 3, "seed": 42}})
             fixture["datasets"][task] = metadata
+            fixture['analyses'][metadata['id']] = analysis.analyze({'dataset_id': metadata['id'], 'kind': 'overview'})
             fixture["rows"][metadata["id"]] = data.rows(metadata["id"], limit=100)
             excluded = [metadata.get("task_target"), *metadata.get("excluded_features", []), *metadata.get("roles", {}).values()]
             features = [column["name"] for column in metadata["columns"] if column["name"] not in excluded]

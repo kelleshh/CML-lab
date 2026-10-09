@@ -34,8 +34,12 @@ export class ApiClient {
     return response.json();
   }
 
-  async download(path, fallbackName = 'cml-lab-export') {
-    const response = await this.fetcher(`${this.base}${path}`);
+  async download(path, fallbackName = 'cml-lab-export', { method = 'GET', body, signal } = {}) {
+    const response = await this.fetcher(`${this.base}${path}`, {
+      method, signal,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
     if (!response.ok) {
       const detail = await response.json().catch(() => ({}));
       throw new ApiError(detail.detail || `Экспорт не выполнен: HTTP ${response.status}`, response.status, detail);

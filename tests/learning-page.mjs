@@ -22,11 +22,11 @@ print(json.dumps({"catalogue": service.list_lessons(), "lessons": {item["id"]: i
 const html = readFileSync(join(root, 'web', 'lesson.html'), 'utf8');
 const script = readFileSync(join(root, 'web', 'lesson.js'), 'utf8');
 
-async function page(identifier = '', transform = value => value) {
-  const dom = new JSDOM(html, {url: `http://localhost/lesson${identifier ? `?id=${identifier}` : ''}`, runScripts: 'outside-only'});
+async function page(identifier = '', transform = value => value, listing = fixtures.catalogue, hash = '') {
+  const dom = new JSDOM(html, {url: `http://localhost/lesson${identifier ? `?id=${identifier}` : ''}${hash}`, runScripts: 'outside-only'});
   const {window} = dom;
   window.fetch = async url => {
-    if (url === '/api/learning/lessons') return {ok: true, status: 200, json: async () => structuredClone(fixtures.catalogue)};
+    if (url === '/api/learning/lessons') return {ok: true, status: 200, json: async () => structuredClone(listing)};
     const id = decodeURIComponent(url.split('/').pop());
     const lesson = fixtures.lessons[id];
     return {ok: Boolean(lesson), status: lesson ? 200 : 404, json: async () => transform(structuredClone(lesson))};
@@ -115,5 +115,33 @@ test('empty search and browser print expose clear user actions', async () => {
   assert.match(document.getElementById('lesson-list').textContent, /Ничего не найдено/);
   assert.equal(document.querySelector('h1').textContent, 'Учебник CML-lab');
   for (const field of document.querySelectorAll('input,select')) assert.ok(field.labels.length);
+  dom.window.close();
+});
+
+
+test('parameter anchors survive asynchronous lesson loading and receive focus', async () => {
+  const {dom, document} = await page('tree-depth', lesson => {
+    lesson.sections.push({title: 'max_depth', text: 'Число последовательных разделений дерева.', anchor: 'param-max_depth'});
+    return lesson;
+  }, fixtures.catalogue, '#param-max_depth');
+  assert.equal(document.getElementById('param-max_depth').textContent, 'max_depth');
+  assert.equal(document.activeElement.id, 'param-max_depth');
+  dom.window.close();
+});
+
+test('thousands of reference summaries stay bounded in DOM and searchable across pages', async () => {
+  const listing = structuredClone(fixtures.catalogue);
+  for (let index=0; index<2400; index+=1) listing.items.push({id: `reference-${index}`, title: `Estimator.parameter_${index}`, summary: 'Русское объяснение поля', tasks:['regression']});
+  listing.total = listing.items.length;
+  const {dom, document, window} = await page('', value=>value, listing);
+  assert.equal(document.querySelectorAll('#lesson-list a').length, 60);
+  const next = [...document.querySelectorAll('.lesson-pagination button')].find(button=>button.textContent==='Следующие');
+  next.click();
+  assert.equal(document.querySelectorAll('#lesson-list a').length, 60);
+  const search = document.getElementById('lesson-search');
+  search.value = 'parameter_2399'; search.dispatchEvent(new window.Event('input'));
+  assert.equal(document.querySelectorAll('#lesson-list a').length, 1);
+  assert.equal(document.querySelector('#lesson-list a').textContent, 'Estimator.parameter_2399');
+  assert.equal(document.querySelector('.lesson-pagination').children.length, 0);
   dom.window.close();
 });

@@ -455,13 +455,27 @@ def validate_preparation_config(config, task=None):
     if task is not None and task not in ALL_TASKS:
         raise ValueError("Неизвестная задача подготовки данных.")
     catalogue = PreparationCatalogue()
+    declarative = result.get('declarative_pipeline')
+    if declarative is not None:
+        from .pipelines import normalize_pipeline, compile_pipeline
+        if set(result) - {'steps', 'declarative_pipeline', 'pipeline_params', 'resampling', 'split_kind'}:
+            raise ValueError('Настройки Pipeline: declarative_pipeline, pipeline_params и resampling.')
+        if any(step.get('enabled', True) for step in result.get('steps', [])):
+            raise ValueError('Выберите один конструктор: declarative Pipeline или прежние этапы подготовки.')
+        result['declarative_pipeline'] = normalize_pipeline(declarative)
+        overrides = result.get('pipeline_params', {})
+        if not isinstance(overrides, dict): raise ValueError('pipeline_params: нужен объект параметров.')
+        transformer = compile_pipeline(result['declarative_pipeline']).set_params(**overrides)
+        from .pipelines import validate_pipeline_object
+        validate_pipeline_object(transformer)
+        result.setdefault('steps', [])
     if "steps" not in result:
         legacy = {key: value for key, value in result.items() if key not in {"resampling", "split_kind"}}
         _validate_params(catalogue.get("numeric"), legacy)
         if task not in {None, "regression"} and legacy.get("selection", "none") != "none":
             raise ValueError("Старый отбор только для регрессии. Используйте selection.univariate.")
     else:
-        if set(result) - {"steps", "resampling", "split_kind"}:
+        if set(result) - {"steps", "resampling", "split_kind", 'declarative_pipeline', 'pipeline_params'}:
             raise ValueError("Настройки новой подготовки: steps и resampling.")
         if not isinstance(result["steps"], list) or len(result["steps"]) > 32:
             raise ValueError("Рецепт содержит список не более 32 этапов.")
@@ -515,6 +529,13 @@ def build_preprocessor(X, config=None, task="regression", seed=42):
     config = deepcopy(config or {})
     if not isinstance(config, dict):
         raise ValueError("Рецепт подготовки должен быть объектом.")
+    if config.get('declarative_pipeline') is not None:
+        from .pipelines import compile_pipeline
+        config = validate_preparation_config(config, task)
+        transformer = compile_pipeline(config['declarative_pipeline'])
+        transformer.set_params(**config.get('pipeline_params', {}))
+        from .pipelines import prepare_pipeline_for_fit
+        return prepare_pipeline_for_fit(transformer, task=task, split_kind=config.get('split_kind') or 'holdout')
     if "steps" not in config:
         legacy = dict(config)
         legacy.pop("resampling", None)

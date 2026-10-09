@@ -16,6 +16,13 @@ class FittedArtifact:
     label_encoder: object = None
     temporal: dict = field(default_factory=dict)
     input_capabilities: dict = field(default_factory=dict)
+    transformed_features: list[str] = field(default_factory=list)
+
+    @property
+    def feature_names(self):
+        from .feature_names import feature_names
+        stored = getattr(self, 'transformed_features', None)
+        return stored or feature_names(self.preprocessing, getattr(self.estimator, 'n_features_in_', len(self.features)))
 
     def transform(self, rows):
         frame = rows if isinstance(rows, pd.DataFrame) else pd.DataFrame(rows)

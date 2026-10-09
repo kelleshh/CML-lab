@@ -11,6 +11,12 @@ const task = document.getElementById('lesson-task');
 let catalogue = [];
 let currentId = new URLSearchParams(location.search).get('id');
 let requestNumber = 0;
+let pageNumber = 0;
+let listSelection = null;
+const pageSize = 60;
+const pagination = node('nav', undefined, 'lesson-pagination');
+pagination.setAttribute('aria-label', 'Страницы учебника');
+list.after(pagination);
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -40,7 +46,23 @@ function renderList() {
   const items = catalogue.filter(item => (!task.value || item.tasks?.includes(task.value)) &&
     (!term || `${item.title} ${item.summary}`.toLocaleLowerCase('ru').includes(term)));
   document.getElementById('lesson-count').textContent = `Найдено уроков: ${items.length}`;
-  for (const item of items) {
+  if (listSelection !== currentId) {
+    const selectedIndex = items.findIndex(item => item.id === currentId);
+    if (selectedIndex >= 0) pageNumber = Math.floor(selectedIndex / pageSize);
+    listSelection = currentId;
+  }
+  pageNumber = Math.min(pageNumber, Math.max(0, Math.ceil(items.length / pageSize) - 1));
+  const first = pageNumber * pageSize;
+  pagination.replaceChildren();
+  if (items.length > pageSize) {
+    const previous = node('button', 'Предыдущие'); previous.type = 'button'; previous.disabled = pageNumber === 0;
+    const next = node('button', 'Следующие'); next.type = 'button'; next.disabled = first + pageSize >= items.length;
+    const position = node('span', `${first+1}–${Math.min(first+pageSize, items.length)} из ${items.length}`, 'lesson-note');
+    previous.addEventListener('click', () => { pageNumber -= 1; renderList(); });
+    next.addEventListener('click', () => { pageNumber += 1; renderList(); });
+    pagination.append(previous, position, next);
+  }
+  for (const item of items.slice(first, first + pageSize)) {
     const link = node('a', item.title, 'lesson-item');
     link.href = `/lesson?id=${encodeURIComponent(item.id)}`;
     if (item.id === currentId) link.setAttribute('aria-current', 'page');
@@ -71,7 +93,9 @@ function renderLesson(lesson) {
   }
   for (const section of lesson.sections || []) {
     const block = node('section');
-    block.append(node('h2', section.title));
+    const title = node('h2', section.title);
+    if (section.anchor) title.id = section.anchor;
+    block.append(title);
     paragraphs(section.text, block);
     if (section.formula) block.append(node('code', section.formula, 'lesson-formula'));
     content.append(block);
@@ -113,13 +137,27 @@ async function loadLesson(focus = false) {
     if (number !== requestNumber) return;
     renderLesson(lesson);
     if (focus) content.focus();
+    scrollToAnchor();
   } catch (error) {
     if (number === requestNumber) content.replaceChildren(node('h1', 'Урок не открыт'), node('p', error.message, 'lesson-error'));
   }
 }
 
-search.addEventListener('input', renderList);
-task.addEventListener('change', renderList);
+function scrollToAnchor() {
+  if (!location.hash) return;
+  let identifier;
+  try { identifier = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+  const heading = document.getElementById(identifier);
+  if (heading && content.contains(heading)) {
+    heading.scrollIntoView?.({ block: 'start' });
+    heading.tabIndex = -1;
+    heading.focus({ preventScroll: true });
+  }
+}
+
+search.addEventListener('input', () => { pageNumber = 0; renderList(); });
+task.addEventListener('change', () => { pageNumber = 0; renderList(); });
+window.addEventListener('hashchange', scrollToAnchor);
 document.getElementById('lesson-print').addEventListener('click', () => window.print());
 window.addEventListener('popstate', () => {
   currentId = new URLSearchParams(location.search).get('id');

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import inspect
+from copy import deepcopy
 import numpy as np
 from pandas.api.types import is_numeric_dtype
 from sklearn.metrics import mean_squared_error
@@ -36,13 +37,20 @@ def fit_artifact(spec, X, y, catalogue, *, label_encoder=None, groups=None,
     from .preparation import build_preprocessor, fit_resample
     task = spec["task"]
     seed = spec.get("seed", 42)
-    prep_config = dict(spec.get("preprocessing") or {})
+    prep_config = deepcopy(spec.get("preprocessing") or {})
     if groups is not None: prep_config["split_kind"]="group"
     elif task in {"forecasting","panel"}: prep_config["split_kind"]="timeseries"
-    model = catalogue.build(task, spec["algorithm_id"], spec.get("params"), seed, spec.get("n_jobs", 1))
+    elif spec.get("split", {}).get("shuffle") is False: prep_config["split_kind"]="ordered"
+    parameters = dict(spec.get('params') or {})
+    for key in list(parameters):
+        if key.startswith('pipeline__'):
+            prep_config.setdefault('pipeline_params', {})[key[len('pipeline__'):]] = parameters.pop(key)
+    model = catalogue.build(task, spec["algorithm_id"], parameters, seed, spec.get("n_jobs", 1))
     _check_stacking_context(model, spec, groups)
     preprocessing = build_preprocessor(X, prep_config, task=task, seed=seed)
     capabilities = dict(catalogue.descriptor(spec["algorithm_id"]).get("capabilities", {}))
+    if hasattr(catalogue, 'effective_capabilities'):
+        capabilities = catalogue.effective_capabilities(model, capabilities)
     # Ensemble recipes can contain dense-only children even when the default
     # recipe accepts sparse input. Persist the actual input contract for inference.
     if any(not get_tags(item).input_tags.sparse for item in _estimator_components(model)):
@@ -110,6 +118,8 @@ def fit_artifact(spec, X, y, catalogue, *, label_encoder=None, groups=None,
         model.fit(Xfit, yfit, **kwargs)
     check()
     artifact = FittedArtifact(task, preprocessing, model, list(X.columns), label_encoder,input_capabilities=capabilities)
+    from .feature_names import feature_names
+    artifact.transformed_features = feature_names(preprocessing, Xt.shape[1])
     if not trace and hasattr(model, "staged_predict"):
         for step, prediction in enumerate(model.staged_predict(Xt), 1):
             check()

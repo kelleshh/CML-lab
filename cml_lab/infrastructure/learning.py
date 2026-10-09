@@ -8,6 +8,8 @@ from typing import Any, Iterable, Mapping
 
 from cml_lab.contexts.learning.domain import HelpEntry, Lesson, LessonSection, SourceReference
 from . import learning_content as content
+from .hyperparameter_learning import (model_article, parameter_article, parameter_knowledge,
+                                      PIPELINE_CLASS_KNOWLEDGE)
 
 
 TASK_LESSONS = {
@@ -35,7 +37,7 @@ def _source(record: Mapping[str, Any]) -> SourceReference:
 def _lesson(record: Mapping[str, Any]) -> Lesson:
     return Lesson(
         id=record["id"], title=record["title"], summary=record["summary"],
-        sections=tuple(LessonSection(part["title"], part["text"], part.get("formula")) for part in record["sections"]),
+        sections=tuple(LessonSection(part["title"], part["text"], part.get("formula"), part.get("anchor")) for part in record["sections"]),
         sources=tuple(_source(part) for part in record["sources"]),
         tasks=tuple(record.get("tasks", ())), families=tuple(record.get("families", ())),
         level=record.get("level", "beginner"), example=record.get("example", ""),
@@ -66,7 +68,8 @@ class InMemoryLearningRepository:
     def __init__(self, *, include_legacy: bool = True,
                  algorithms: Iterable[Mapping[str, Any]] = (),
                  stages: Iterable[Mapping[str, Any]] = (),
-                 metrics: Iterable[Mapping[str, Any]] = ()) -> None:
+                 metrics: Iterable[Mapping[str, Any]] = (),
+                 pipeline_classes: Iterable[Mapping[str, Any]] = ()) -> None:
         records = (_legacy_lessons() if include_legacy else []) + deepcopy(content.LESSONS)
         self._lessons: dict[str, Lesson] = {}
         for record in records:
@@ -78,6 +81,7 @@ class InMemoryLearningRepository:
         for record in content.HELP:
             self._add_help(record)
         self.register_schemas(algorithms=algorithms, stages=stages, metrics=metrics)
+        self.register_pipeline_classes(pipeline_classes)
 
     def lessons(self) -> tuple[Lesson, ...]:
         return tuple(self._lessons.values())
@@ -135,6 +139,19 @@ class InMemoryLearningRepository:
     def _register_definition(self, definition: Mapping[str, Any], namespace: str) -> None:
         identifier = str(definition["id"])
         lesson_id = definition.get("lesson_id")
+        if namespace == "model":
+            tasks = set(definition.get("tasks", []))
+            overview = next((item for item in content.LESSONS
+                if str(definition.get("family", "")) in item.get("families", [])
+                and tasks.intersection(item.get("tasks", []))), None)
+            if lesson_id not in self._lessons:
+                article = model_article(definition, overview)
+                self._lessons[article["id"]] = _lesson(article)
+            for field in definition.get("params", []):
+                linked = field.get("lesson_id")
+                if linked and linked not in self._lessons:
+                    article = parameter_article(definition, field)
+                    self._lessons[article["id"]] = _lesson(article)
         if not lesson_id or lesson_id not in self._lessons:
             raise ValueError(f"{identifier} ссылается на отсутствующий урок: {lesson_id}")
         lesson = self._lessons[lesson_id]
@@ -151,10 +168,12 @@ class InMemoryLearningRepository:
         })
         for parameter in definition.get("params", []):
             key = parameter["key"]
-            knowledge = content.parameter_help(identifier, str(definition.get("family", "")), key, namespace)
+            knowledge = parameter_knowledge(identifier, str(definition.get("family", "")), key, namespace,
+                                            class_name=str(definition.get("class_path", definition.get("name", identifier))).rsplit(".", 1)[-1],
+                                            library=str(definition.get("library", "")))
             help_id = parameter.get("help_key", f"{namespace}.{identifier}.{key}")
             linked_lesson = parameter.get("lesson_id", lesson_id)
-            inline = parameter.get("help", knowledge.get("summary", ""))
+            inline = knowledge.get("summary", parameter.get("help", ""))
             if not inline:
                 raise ValueError(f"Поле {help_id} не имеет объяснения.")
             limits: list[str] = []
@@ -172,6 +191,45 @@ class InMemoryLearningRepository:
                 "sources": sources, "effects": knowledge.get("effects", []),
                 "cautions": knowledge.get("cautions", []),
             })
+
+
+    def register_pipeline_classes(self, definitions: Iterable[Mapping[str, Any]]) -> None:
+        """Статьи классов, якоря параметров и самостоятельные ссылки Mini-IDE."""
+        all_tasks = tuple(TASK_LESSONS)
+        for raw in definitions:
+            name = str(raw["name"])
+            identifier = "pipeline-" + name.lower()
+            source_url = f"https://scikit-learn.org/1.8/modules/generated/{raw['qualified_name']}.html"
+            knowledge = PIPELINE_CLASS_KNOWLEDGE.get(name, {})
+            description = knowledge.get("summary", raw.get("description", ""))
+            # Вложенный estimator читается как модель, а не обещанный transformer.
+            if "преобразователь или вложенная модель" in description:
+                matched = next((lesson for lesson in self._lessons.values()
+                                if lesson.id.startswith("model-") and lesson.title == name), None)
+                description = matched.summary if matched else "Вложенный estimator используется для отбора признаков или допустимой композиции. Его fit обучается по текущему train; прямой transform возможен только при наличии метода transform."
+            definition = {"id": identifier, "name": name, "class_path": raw["qualified_name"],
+                          "library": "sklearn", "family": "preprocessing", "tasks": all_tasks,
+                          "description": description, "params": raw.get("params", []),
+                          "lesson_id": raw.get("lesson_id", identifier), "source": source_url}
+            overview = {"summary": "fit учит состояние преобразователя по train; transform применяет сохраненное правило к новым строкам. Графическая ветвь и Python-декларация описывают тот же объект sklearn.",
+                        "example": knowledge.get("example", "Строки train проходят fit_transform, контрольные строки проходят только transform. Число выходных координат проверяется в preview.")}
+            article = model_article(definition, overview)
+            for field in definition["params"]:
+                parameter = dict(field)
+                linked_article = parameter_article(definition, parameter, namespace="preprocessing")
+                self._lessons[linked_article["id"]] = _lesson(linked_article)
+                semantic = parameter_knowledge(identifier, "preprocessing", field["key"], "preprocessing", class_name=name, library="sklearn")
+                article["sections"].append({"title": str(field["key"]),
+                    "text": semantic["summary"] + " " + semantic["example"] + " " + " ".join(semantic.get("cautions", [])),
+                    "anchor": "param-" + field["key"]})
+                self._add_help({"key": field.get("help_key", f"pipeline.{name}.{field['key']}"),
+                    "label": field["key"], "summary": semantic["summary"], "details": semantic.get("details", semantic["summary"]),
+                    "example": semantic["example"], "lesson_id": linked_article["id"],
+                    "sources": linked_article["sources"], "cautions": semantic.get("cautions", [])})
+            self._lessons[article["id"]] = _lesson(article)
+            self._add_help({"key": raw.get("help_key", f"pipeline.{name}"), "label": name,
+                "summary": description, "details": description, "example": article["example"],
+                "lesson_id": article["id"], "sources": article["sources"]})
 
 
 def vars_source(source: SourceReference) -> dict[str, str]:

@@ -1,0 +1,16 @@
+.cml-analysis-statistics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px 15px; padding: 16px 0; margin: 0; }
+.cml-analysis-statistics dt { grid-row: 1; color: var(--muted); font-size: .86rem; }
+.cml-analysis-statistics dd { grid-row: 2; margin: 0; font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+.cml-analysis-plots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.cml-analysis-plots .cml-panel + .cml-panel { margin-top: 0; }
+.cml-analysis-card { min-width: 0; }
+.cml-analysis-plot { min-height: 340px; width: 100%; }
+.cml-analysis-card .cml-panel-heading { align-items: start; }
+.cml-analysis-card h3 { flex: 1; overflow-wrap: anywhere; }
+.cml-analysis-card details { margin-top: 10px; }
+.cml-analysis-scope { color: var(--muted); font-size: .84rem; margin-top: 8px; }
+.cml-analysis-form { margin-top: 16px; }
+.cml-analysis-form select[multiple] { min-height: 120px; }
+.cml-analysis-form + .cml-note { margin: 14px 0; }
+@media (max-width: 1050px) { .cml-analysis-plots { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .cml-analysis-statistics { grid-template-columns: auto 1fr; } .cml-analysis-statistics dt, .cml-analysis-statistics dd { grid-row: auto; } .cml-analysis-statistics dd { font-size: 1rem; text-align: right; } }

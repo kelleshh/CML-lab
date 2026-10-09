@@ -1,0 +1,1028 @@
+{
+  "dataset": {
+    "source": "custom",
+    "description": "Строки введены или изменены вручную.",
+    "id": "b0c2a11287ad408d817f3d963e17f3bc",
+    "name": "Analysis fixture",
+    "rows": 12,
+    "columns": [
+      {
+        "name": "x",
+        "dtype": "float64",
+        "numeric": true,
+        "missing": 1,
+        "unique": 11
+      },
+      {
+        "name": "y",
+        "dtype": "float64",
+        "numeric": true,
+        "missing": 0,
+        "unique": 12
+      },
+      {
+        "name": "z",
+        "dtype": "float64",
+        "numeric": true,
+        "missing": 0,
+        "unique": 3
+      },
+      {
+        "name": "group",
+        "dtype": "object",
+        "numeric": false,
+        "missing": 0,
+        "unique": 2
+      },
+      {
+        "name": "time",
+        "dtype": "object",
+        "numeric": false,
+        "missing": 0,
+        "unique": 12
+      }
+    ],
+    "column_names": [
+      "x",
+      "y",
+      "z",
+      "group",
+      "time"
+    ],
+    "preview": [
+      {
+        "x": null,
+        "y": 1.0,
+        "z": 0.0,
+        "group": "B",
+        "time": "2024-01-01"
+      },
+      {
+        "x": 1.0,
+        "y": 3.0,
+        "z": 1.0,
+        "group": "A",
+        "time": "2024-01-02"
+      },
+      {
+        "x": 2.0,
+        "y": 5.0,
+        "z": 2.0,
+        "group": "B",
+        "time": "2024-01-03"
+      },
+      {
+        "x": 3.0,
+        "y": 7.0,
+        "z": 0.0,
+        "group": "A",
+        "time": "2024-01-04"
+      },
+      {
+        "x": 4.0,
+        "y": 9.0,
+        "z": 1.0,
+        "group": "B",
+        "time": "2024-01-05"
+      },
+      {
+        "x": 5.0,
+        "y": 11.0,
+        "z": 2.0,
+        "group": "A",
+        "time": "2024-01-06"
+      },
+      {
+        "x": 6.0,
+        "y": 13.0,
+        "z": 0.0,
+        "group": "B",
+        "time": "2024-01-07"
+      },
+      {
+        "x": 7.0,
+        "y": 15.0,
+        "z": 1.0,
+        "group": "A",
+        "time": "2024-01-08"
+      },
+      {
+        "x": 8.0,
+        "y": 17.0,
+        "z": 2.0,
+        "group": "B",
+        "time": "2024-01-09"
+      },
+      {
+        "x": 9.0,
+        "y": 19.0,
+        "z": 0.0,
+        "group": "A",
+        "time": "2024-01-10"
+      },
+      {
+        "x": 10.0,
+        "y": 21.0,
+        "z": 1.0,
+        "group": "B",
+        "time": "2024-01-11"
+      },
+      {
+        "x": 11.0,
+        "y": 23.0,
+        "z": 2.0,
+        "group": "A",
+        "time": "2024-01-12"
+      }
+    ],
+    "targets": [
+      "x",
+      "y",
+      "z"
+    ],
+    "default_target": "y",
+    "feature_names": [
+      "x",
+      "z",
+      "group",
+      "time"
+    ],
+    "warnings": [],
+    "modality": "tabular",
+    "task": "regression",
+    "task_label": "Регрессия: предсказать число",
+    "tasks": [
+      "regression"
+    ],
+    "tags": [],
+    "task_target": "y",
+    "created_at": "2026-10-09T17:23:30.453084+00:00",
+    "stats": {
+      "rows": 12,
+      "columns": 5,
+      "numeric_columns": 3,
+      "categorical_columns": 2,
+      "missing_cells": 1,
+      "missing_fraction": 0.016666666666666666,
+      "memory_bytes": 1728,
+      "target": "y",
+      "target_quantiles": {
+        "q05": 2.1,
+        "q25": 6.5,
+        "q50": 12.0,
+        "q75": 17.5,
+        "q95": 21.9
+      },
+      "target_unique": 12
+    }
+  },
+  "overview": {
+    "kind": "overview",
+    "title": "Dataset overview",
+    "traces": [],
+    "layout": {},
+    "explanation": "Обзор описывает исходную таблицу до подготовки и обучения. Дополнительные графики создаются только по кнопке. Не выбирайте параметры модели по отдельному итоговому test.",
+    "sample_info": {
+      "total_rows": 12,
+      "used_rows": 12,
+      "sampled": false,
+      "scope": "full dataset"
+    },
+    "summary": {
+      "rows": 12,
+      "columns": 5,
+      "numeric_columns": 3,
+      "categorical_columns": 2,
+      "missing_cells": 1,
+      "duplicate_rows": 0
+    },
+    "columns": [
+      {
+        "name": "x",
+        "numeric": true,
+        "dtype": "float64",
+        "missing": 1,
+        "unique": 11
+      },
+      {
+        "name": "y",
+        "numeric": true,
+        "dtype": "float64",
+        "missing": 0,
+        "unique": 12
+      },
+      {
+        "name": "z",
+        "numeric": true,
+        "dtype": "float64",
+        "missing": 0,
+        "unique": 3
+      },
+      {
+        "name": "group",
+        "numeric": false,
+        "dtype": "object",
+        "missing": 0,
+        "unique": 2
+      },
+      {
+        "name": "time",
+        "numeric": false,
+        "dtype": "object",
+        "missing": 0,
+        "unique": 12
+      }
+    ],
+    "graph_types": [
+      {
+        "id": "histogram",
+        "name": "Histogram",
+        "category": "Distribution",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Столбец показывает число значений внутри интервала. bins меняет подробность; вид гистограммы не доказывает нормальность.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "box",
+        "name": "Box plot",
+        "category": "Distribution",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Коробка содержит средние 50% значений, линия внутри — медиана. Точки за усами требуют проверки и не удаляются автоматически.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "violin",
+        "name": "Violin plot",
+        "category": "Distribution",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Ширина отражает сглаженную плотность значений. Форма зависит от сглаживания и размера показанной выборки.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "ecdf",
+        "name": "ECDF",
+        "category": "Distribution",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Высота ECDF в точке x — доля непустых значений, которые не больше x. Пропуски не входят в знаменатель.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "qq",
+        "name": "Normal Q-Q plot",
+        "category": "Distribution",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Сравнивает упорядоченные значения с квантилями нормального распределения. Изгибы и хвосты показывают различие; это график, а не автоматическое решение о нормальности.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "kde",
+        "name": "Kernel density estimate",
+        "category": "Distribution",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Гауссовские ядра дают гладкую оценку плотности. Площадь плотности примерно 1, высота не является числом строк; многомодальные данные могут сглаживаться.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "scatter",
+        "name": "Scatter plot",
+        "category": "Relations",
+        "column_types": [
+          "numeric",
+          "numeric"
+        ],
+        "explanation": "Каждая точка — одна строка с обеими координатами. График помогает увидеть форму связи, группы и редкие точки; связь не устанавливает причину.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "scatter3d",
+        "name": "3D scatter plot",
+        "category": "Relations",
+        "column_types": [
+          "numeric",
+          "numeric",
+          "numeric"
+        ],
+        "explanation": "Три координаты показывают выбранные числовые столбцы. Поворачивайте график и проверяйте 2D-срезы: проекция может скрывать точки.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "histogram2d",
+        "name": "2D histogram",
+        "category": "Relations",
+        "column_types": [
+          "numeric",
+          "numeric"
+        ],
+        "explanation": "Цвет клетки показывает число строк в двух интервалах одновременно. Используются все строки с обеими координатами, без случайной выборки точек.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "correlation",
+        "name": "Correlation matrix",
+        "category": "Relations",
+        "column_types": [],
+        "explanation": "Pearson измеряет линейную связь, Spearman — монотонную связь рангов. Каждая пара использует свои непустые строки. null означает, что связь не определена; корреляция не устанавливает причину.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "missing_bar",
+        "name": "Missing values by column",
+        "category": "Missing data",
+        "column_types": [],
+        "explanation": "Количество пропусков считается по всей таблице. Большая доля пропусков — повод выяснить причину, а не автоматически заполнить столбец средним.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "missing_matrix",
+        "name": "Missingness matrix",
+        "category": "Missing data",
+        "column_types": [],
+        "explanation": "1 означает пропущенную ячейку, 0 — известную. Совпадающие полосы помогают заметить совместное отсутствие данных; номера строк принадлежат исходной таблице.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "category_counts",
+        "name": "Category counts",
+        "category": "Categorical",
+        "column_types": [
+          "any"
+        ],
+        "explanation": "Количество строк каждой категории считается по всей таблице. Показаны top_k категорий и отдельная сумма остальных; пропуски описаны отдельно.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "category_crosstab",
+        "name": "Category cross-tabulation",
+        "category": "Categorical",
+        "column_types": [
+          "any",
+          "any"
+        ],
+        "explanation": "Клетка показывает число строк с двумя категориями. Редкие категории вне top_k исключены из этой матрицы и явно перечислены в счетчике.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "group_box",
+        "name": "Box plot by group",
+        "category": "Groups",
+        "column_types": [
+          "any",
+          "numeric"
+        ],
+        "explanation": "Сравнивает распределения числового значения внутри категорий. Размеры групп могут различаться; график не доказывает влияние категории.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "group_mean",
+        "name": "Group mean",
+        "category": "Groups",
+        "column_types": [
+          "any",
+          "numeric"
+        ],
+        "explanation": "Столбец — среднее значение группы. Полоса ошибки показывает стандартное отклонение значений, а не доверительный интервал среднего. Количество строк группы указано отдельно.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "time_line",
+        "name": "Time series plot",
+        "category": "Time",
+        "column_types": [
+          "time",
+          "numeric"
+        ],
+        "explanation": "Значения упорядочены по времени. Линия не заполняет пропущенные даты; повторяющиеся даты могут давать несколько точек. Это анализ исходных наблюдений.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "rolling_mean",
+        "name": "Rolling mean",
+        "category": "Time",
+        "column_types": [
+          "time",
+          "numeric"
+        ],
+        "explanation": "Среднее вычисляется по последним window наблюдениям после сортировки, без будущих строк. Это описательный график; для признака прогноза нужна отдельная задержка относительно цели.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "autocorrelation",
+        "name": "Autocorrelation",
+        "category": "Time",
+        "column_types": [
+          "time",
+          "numeric"
+        ],
+        "explanation": "Сравнивает ряд с ним же при сдвиге на lag наблюдений. Нужны равномерные уникальные моменты и одна последовательность. Тренд может создавать большую корреляцию без сезонности.",
+        "lesson_id": "dataset-analysis"
+      },
+      {
+        "id": "outliers",
+        "name": "IQR outlier flags",
+        "category": "Quality",
+        "column_types": [
+          "numeric"
+        ],
+        "explanation": "Порог 1.5×IQR отмечает значения ниже Q1−1.5×IQR и выше Q3+1.5×IQR. Это эвристическая метка для просмотра; строки не меняются и не удаляются.",
+        "lesson_id": "dataset-analysis"
+      }
+    ],
+    "plots": [
+      {
+        "kind": "missing_bar",
+        "title": "Missing values by column: x, y, z, group, time",
+        "explanation": "Количество пропусков считается по всей таблице. Большая доля пропусков — повод выяснить причину, а не автоматически заполнить столбец средним.",
+        "lesson_id": "dataset-analysis",
+        "traces": [
+          {
+            "type": "bar",
+            "x": [
+              "x",
+              "y",
+              "z",
+              "group",
+              "time"
+            ],
+            "y": [
+              1,
+              0,
+              0,
+              0,
+              0
+            ],
+            "marker": {
+              "color": "#803748"
+            }
+          }
+        ],
+        "layout": {
+          "xaxis": {
+            "title": "Column"
+          },
+          "yaxis": {
+            "title": "Missing rows"
+          },
+          "margin": {
+            "t": 25,
+            "b": 65,
+            "l": 65,
+            "r": 25
+          }
+        },
+        "statistics": {
+          "counts": {
+            "x": 1,
+            "y": 0,
+            "z": 0,
+            "group": 0,
+            "time": 0
+          },
+          "fractions": {
+            "x": 0.08333333333333333,
+            "y": 0.0,
+            "z": 0.0,
+            "group": 0.0,
+            "time": 0.0
+          },
+          "columns_truncated": false
+        },
+        "sample_info": {
+          "total_rows": 12,
+          "eligible_rows": 12,
+          "used_rows": 12,
+          "sampled": false,
+          "scope": "full dataset",
+          "seed": 42
+        }
+      },
+      {
+        "kind": "histogram",
+        "title": "Histogram: x",
+        "explanation": "Столбец показывает число значений внутри интервала. bins меняет подробность; вид гистограммы не доказывает нормальность.",
+        "lesson_id": "dataset-analysis",
+        "traces": [
+          {
+            "type": "bar",
+            "x": [
+              1.1666666666666665,
+              1.5,
+              1.8333333333333333,
+              2.1666666666666665,
+              2.5,
+              2.833333333333333,
+              3.1666666666666665,
+              3.5,
+              3.833333333333333,
+              4.166666666666666,
+              4.5,
+              4.833333333333333,
+              5.166666666666666,
+              5.5,
+              5.833333333333333,
+              6.166666666666666,
+              6.5,
+              6.833333333333333,
+              7.166666666666666,
+              7.5,
+              7.833333333333333,
+              8.166666666666666,
+              8.5,
+              8.833333333333332,
+              9.166666666666666,
+              9.5,
+              9.833333333333332,
+              10.166666666666666,
+              10.5,
+              10.833333333333332
+            ],
+            "y": [
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              0,
+              1
+            ],
+            "width": [
+              0.33333333333333326,
+              0.33333333333333326,
+              0.3333333333333335,
+              0.33333333333333304,
+              0.3333333333333335,
+              0.3333333333333335,
+              0.33333333333333304,
+              0.3333333333333335,
+              0.3333333333333335,
+              0.33333333333333304,
+              0.33333333333333304,
+              0.3333333333333339,
+              0.33333333333333304,
+              0.33333333333333304,
+              0.3333333333333339,
+              0.33333333333333304,
+              0.33333333333333304,
+              0.3333333333333339,
+              0.33333333333333304,
+              0.33333333333333304,
+              0.3333333333333339,
+              0.33333333333333215,
+              0.3333333333333339,
+              0.3333333333333339,
+              0.33333333333333215,
+              0.3333333333333339,
+              0.3333333333333339,
+              0.33333333333333215,
+              0.3333333333333339,
+              0.3333333333333339
+            ],
+            "marker": {
+              "color": "#803748"
+            }
+          }
+        ],
+        "layout": {
+          "xaxis": {
+            "title": "x"
+          },
+          "yaxis": {
+            "title": "Rows"
+          },
+          "margin": {
+            "t": 25,
+            "b": 65,
+            "l": 65,
+            "r": 25
+          }
+        },
+        "statistics": {
+          "edges": [
+            1.0,
+            1.3333333333333333,
+            1.6666666666666665,
+            2.0,
+            2.333333333333333,
+            2.6666666666666665,
+            3.0,
+            3.333333333333333,
+            3.6666666666666665,
+            4.0,
+            4.333333333333333,
+            4.666666666666666,
+            5.0,
+            5.333333333333333,
+            5.666666666666666,
+            6.0,
+            6.333333333333333,
+            6.666666666666666,
+            7.0,
+            7.333333333333333,
+            7.666666666666666,
+            8.0,
+            8.333333333333332,
+            8.666666666666666,
+            9.0,
+            9.333333333333332,
+            9.666666666666666,
+            10.0,
+            10.333333333333332,
+            10.666666666666666,
+            11.0
+          ],
+          "counts": [
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            0,
+            1,
+            0,
+            1
+          ]
+        },
+        "sample_info": {
+          "total_rows": 12,
+          "eligible_rows": 11,
+          "used_rows": 11,
+          "sampled": false,
+          "scope": "all eligible rows",
+          "seed": 42
+        }
+      },
+      {
+        "kind": "category_counts",
+        "title": "Category counts: group",
+        "explanation": "Количество строк каждой категории считается по всей таблице. Показаны top_k категорий и отдельная сумма остальных; пропуски описаны отдельно.",
+        "lesson_id": "dataset-analysis",
+        "traces": [
+          {
+            "type": "bar",
+            "x": [
+              "B",
+              "A"
+            ],
+            "y": [
+              6,
+              6
+            ],
+            "marker": {
+              "color": "#803748"
+            }
+          }
+        ],
+        "layout": {
+          "xaxis": {
+            "title": "group"
+          },
+          "yaxis": {
+            "title": "Rows"
+          },
+          "margin": {
+            "t": 25,
+            "b": 65,
+            "l": 65,
+            "r": 25
+          }
+        },
+        "statistics": {
+          "missing": 0,
+          "other_rows": 0
+        },
+        "sample_info": {
+          "total_rows": 12,
+          "eligible_rows": 12,
+          "used_rows": 12,
+          "sampled": false,
+          "scope": "full dataset",
+          "seed": 42
+        }
+      }
+    ]
+  },
+  "scatter": {
+    "kind": "scatter",
+    "title": "Scatter plot: x, y",
+    "explanation": "Каждая точка — одна строка с обеими координатами. График помогает увидеть форму связи, группы и редкие точки; связь не устанавливает причину.",
+    "lesson_id": "dataset-analysis",
+    "traces": [
+      {
+        "type": "scatter",
+        "mode": "markers",
+        "x": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          7.0,
+          8.0,
+          9.0,
+          10.0,
+          11.0
+        ],
+        "y": [
+          3.0,
+          5.0,
+          7.0,
+          9.0,
+          11.0,
+          13.0,
+          15.0,
+          17.0,
+          19.0,
+          21.0,
+          23.0
+        ],
+        "customdata": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "marker": {
+          "color": "#803748",
+          "size": 4,
+          "opacity": 0.65
+        }
+      }
+    ],
+    "layout": {
+      "xaxis": {
+        "title": "x"
+      },
+      "yaxis": {
+        "title": "y"
+      },
+      "margin": {
+        "t": 25,
+        "b": 65,
+        "l": 65,
+        "r": 25
+      }
+    },
+    "statistics": {},
+    "sample_info": {
+      "total_rows": 12,
+      "eligible_rows": 11,
+      "used_rows": 11,
+      "sampled": false,
+      "scope": "all eligible rows",
+      "seed": 42
+    }
+  },
+  "ecdf": {
+    "kind": "ecdf",
+    "title": "ECDF: x",
+    "explanation": "Высота ECDF в точке x — доля непустых значений, которые не больше x. Пропуски не входят в знаменатель.",
+    "lesson_id": "dataset-analysis",
+    "traces": [
+      {
+        "type": "scatter",
+        "mode": "lines",
+        "x": [
+          1.0,
+          2.0,
+          3.0,
+          4.0,
+          5.0,
+          6.0,
+          7.0,
+          8.0,
+          9.0,
+          10.0,
+          11.0
+        ],
+        "y": [
+          0.09090909090909091,
+          0.18181818181818182,
+          0.2727272727272727,
+          0.36363636363636365,
+          0.45454545454545453,
+          0.5454545454545454,
+          0.6363636363636364,
+          0.7272727272727273,
+          0.8181818181818182,
+          0.9090909090909091,
+          1.0
+        ],
+        "line": {
+          "shape": "hv",
+          "color": "#803748"
+        }
+      }
+    ],
+    "layout": {
+      "xaxis": {
+        "title": "x"
+      },
+      "yaxis": {
+        "title": "Fraction ≤ x",
+        "range": [
+          0,
+          1
+        ]
+      },
+      "margin": {
+        "t": 25,
+        "b": 65,
+        "l": 65,
+        "r": 25
+      }
+    },
+    "statistics": {},
+    "sample_info": {
+      "total_rows": 12,
+      "eligible_rows": 11,
+      "used_rows": 11,
+      "sampled": false,
+      "scope": "all eligible rows",
+      "seed": 42,
+      "rendered_points": 11,
+      "output_thinned": false
+    }
+  },
+  "missing_bar": {
+    "kind": "missing_bar",
+    "title": "Missing values by column: x, y",
+    "explanation": "Количество пропусков считается по всей таблице. Большая доля пропусков — повод выяснить причину, а не автоматически заполнить столбец средним.",
+    "lesson_id": "dataset-analysis",
+    "traces": [
+      {
+        "type": "bar",
+        "x": [
+          "x",
+          "y"
+        ],
+        "y": [
+          1,
+          0
+        ],
+        "marker": {
+          "color": "#803748"
+        }
+      }
+    ],
+    "layout": {
+      "xaxis": {
+        "title": "Column"
+      },
+      "yaxis": {
+        "title": "Missing rows"
+      },
+      "margin": {
+        "t": 25,
+        "b": 65,
+        "l": 65,
+        "r": 25
+      }
+    },
+    "statistics": {
+      "counts": {
+        "x": 1,
+        "y": 0
+      },
+      "fractions": {
+        "x": 0.08333333333333333,
+        "y": 0.0
+      },
+      "columns_truncated": true
+    },
+    "sample_info": {
+      "total_rows": 12,
+      "eligible_rows": 12,
+      "used_rows": 12,
+      "sampled": false,
+      "scope": "full dataset",
+      "seed": 42
+    }
+  },
+  "group_mean": {
+    "kind": "group_mean",
+    "title": "Group mean: group, y",
+    "explanation": "Столбец — среднее значение группы. Полоса ошибки показывает стандартное отклонение значений, а не доверительный интервал среднего. Количество строк группы указано отдельно.",
+    "lesson_id": "dataset-analysis",
+    "traces": [
+      {
+        "type": "bar",
+        "x": [
+          "B",
+          "A"
+        ],
+        "y": [
+          11.0,
+          13.0
+        ],
+        "error_y": {
+          "type": "data",
+          "array": [
+            6.831300510639732,
+            6.831300510639732
+          ]
+        },
+        "customdata": [
+          6,
+          6
+        ],
+        "marker": {
+          "color": "#803748"
+        },
+        "hovertemplate": "%{x}: mean=%{y}; rows=%{customdata}<extra></extra>"
+      }
+    ],
+    "layout": {
+      "xaxis": {
+        "title": "group"
+      },
+      "yaxis": {
+        "title": "y"
+      },
+      "margin": {
+        "t": 25,
+        "b": 65,
+        "l": 65,
+        "r": 25
+      }
+    },
+    "statistics": {
+      "group_counts": {
+        "B": 6,
+        "A": 6
+      },
+      "missing_rows": 0,
+      "excluded_rare_rows": 0
+    },
+    "sample_info": {
+      "total_rows": 12,
+      "eligible_rows": 12,
+      "used_rows": 12,
+      "sampled": false,
+      "scope": "all eligible rows",
+      "seed": 42
+    }
+  }
+}

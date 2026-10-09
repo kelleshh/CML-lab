@@ -86,7 +86,8 @@ class PreparationPreviewGateway:
             config["split_kind"] = "timeseries"
         transformer = build_preprocessor(Xtrain, config, task=spec["task"], seed=spec["seed"])
         Xt = transformer.fit_transform(Xtrain, fit_target)
-        names = list(transformer.get_feature_names_out())
+        from .ml.feature_names import feature_names
+        names = feature_names(transformer, Xt.shape[1])
         if len(names) != Xt.shape[1]:
             raise ValueError("Имена подготовленных признаков не совпадают с фактической матрицей.")
         values = Xt.data if sparse.issparse(Xt) else np.asarray(Xt)

@@ -6,6 +6,7 @@ export class ModelBuilder {
   constructor({ catalogue, onChange, onError }) {
     this.catalogue = catalogue; this.onChange = onChange; this.onError = onError;
     this.task = 'regression'; this.modelId = ''; this.savedParams = {}; this.family = '';
+    this.parameterQuery = ''; this.advancedOpen = false;
   }
 
   mount(container) { this.container = container; this.render(); return this; }
@@ -27,6 +28,48 @@ export class ModelBuilder {
     this.onChange(this.selected());
   }
 
+
+  organizeParameters(container, schema) {
+    const query = element('input', { type: 'search', value: this.parameterQuery, placeholder: 'Найти гиперпараметр: max_depth, alpha…', 'aria-label': 'Поиск гиперпараметров' });
+    const status = element('p', { className: 'cml-note', role: 'status', 'aria-live': 'polite' });
+    const basic = element('div', { className: 'cml-form-grid', 'data-parameter-group': 'basic' });
+    const advancedGrid = element('div', { className: 'cml-form-grid', 'data-parameter-group': 'advanced' });
+    const advancedSummary = element('summary', { text: 'Дополнительные параметры' });
+    const advanced = element('details', { className: 'cml-parameter-advanced', open: this.advancedOpen }, [advancedSummary, advancedGrid]);
+    const rows = [];
+    for (const definition of schema) {
+      const control = this.form.controls.get(definition.key)?.control;
+      const wrapper = control?.closest('.cml-field');
+      if (!wrapper) continue;
+      const extra = definition.advanced === true;
+      (extra ? advancedGrid : basic).append(wrapper);
+      rows.push({ definition, wrapper, extra });
+    }
+    let applyingFilter = false;
+    const applyFilter = () => {
+      applyingFilter = true;
+      const term = query.value.trim().toLocaleLowerCase('ru');
+      let count = 0, extraCount = 0;
+      for (const row of rows) {
+        const searchable = `${row.definition.key} ${row.definition.help || ''} ${row.definition.description || ''}`.toLocaleLowerCase('ru');
+        const visible = !term || searchable.includes(term);
+        row.wrapper.hidden = !visible;
+        row.wrapper.style.display = visible ? '' : 'none';
+        if (visible) { count += 1; if (row.extra) extraCount += 1; }
+      }
+      status.textContent = `Показано параметров: ${count} из ${rows.length}. Скрытые поля сохраняют свои значения.`;
+      advanced.hidden = !extraCount;
+      advanced.style.display = extraCount ? '' : 'none';
+      advancedSummary.textContent = `Дополнительные параметры (${extraCount})`;
+      advanced.open = Boolean(term && extraCount) || this.advancedOpen;
+      applyingFilter = false;
+    };
+    advanced.addEventListener('toggle', () => { if (!applyingFilter && !query.value.trim()) this.advancedOpen = advanced.open; });
+    query.addEventListener('input', () => { this.parameterQuery = query.value; applyFilter(); });
+    container.replaceChildren(query, status, basic, advanced);
+    applyFilter();
+  }
+
   render() {
     if (!this.container) return;
     const models = this.algorithms();
@@ -43,6 +86,7 @@ export class ModelBuilder {
     const selected = this.selected();
     const controls = element('div');
     this.form = new SchemaForm({ onChange: () => this.onChange(this.selected()), definitions: this.catalogue.algorithms || [], task: this.task }).mount(controls, selected?.params || [], this.savedParams);
+    this.organizeParameters(controls, selected?.params || []);
     const capabilityLabels = {
       predict_proba: 'Вероятности классов', decision_function: 'Оценка уверенности', coefficients: 'Коэффициенты', feature_importance: 'Важность признаков',
       partial_fit: 'Обучение порциями', staged_predict: 'Промежуточные прогнозы', transductive: 'Только исходные точки', predict: 'Прогноз для новых строк',
