@@ -1,0 +1,28 @@
+# Контракты модулей
+
+## Данные (linear_lab/datasets.py)
+DataService(root: Path) : catalogue() -> list[dict]; load(spec: dict) -> dict metadata; import_bytes(data: bytes, filename: str) -> dict; describe(id: str) -> dict; resolve(id: str, target: str|None, features: list[str]|None) -> DataBundle.
+DataBundle: X pandas.DataFrame, y numpy.ndarray, feature_names list[str], target_name str, name str, meta dict. Disk persistence under root, only server-generated identifiers; metadata columns list {name,dtype,numeric,missing}; preview list dict; targets list[str], default_target str; id/name/rows/description. load spec {kind:'synthetic'|'builtin'|'fetch'|'openml', name, params:{}}. Synthetic default name='linear', params n_samples=180,n_features=2,noise=8,correlation=.2,outliers=0,seed=42. Support sample patch via spec kind='custom', rows:list[dict],target string.
+
+## Модели (linear_lab/models.py)
+ModelRegistry: catalogue()->list[dict]; create(model_id: str, params: dict, seed: int) -> sklearn estimator; spec(model_id)->dict. Metadata: id,name,family,description,formula,explanation,trace ('epochs'|'active_set'|'final'),params list[{key,label,type:'float'|'int'|'select'|'bool',default,min,max,step,options,help}], source. Include standard, robust, Bayesian, GLM and exotic implementations through libraries. Params metadata is authoritative allowed schema. Exotic dependencies installed skglm and cvxpy.
+
+## Обучение (linear_lab/training.py)
+TrainingService(data_service, model_registry).run(request: dict, progress: callable, cancelled: callable) -> dict. Request {dataset_id,target:null,features:null,model:'ridge',params:{alpha:1},seed:42,split:{train:.6,validation:.2,test:.2,shuffle:true},preprocessing:{scale:true,degree:1,impute:true},metrics:['mse','rmse','mae','r2'],epochs:100,cv:0,regularization_path:true,artifact_path:string}. progress(dict) queue events {progress:0..1,message,frame?:{step,coef,intercept,train_loss,validation_loss,objective}}. run returns JSON-safe result including model/model_name, metrics:{train:{},validation:{},test:{}}, feature_names,coefficients,intercept,trace:list frames,trace_kind,trace_label,warnings:list, predictions:{actual,predicted,residual,split,indices}, plot_data:{X numeric original columns,y,split,feature_names}, prediction_grid:{x,y?,z}, regularization_path:{alphas,coefficients,feature_names}, diagnostics:{correlation}, timing, preprocessing details. Model artifact at artifact_path using joblib.dump. Cancellation callback checked between steps/expensive optional diagnostics. Models with constraints fail clearly. No test-driven tuning; CV only train partition. Test evaluation displayed at explicit reveal endpoint/UI.
+
+## API
+GET /api/catalogue -> {models,datasets,metrics,lessons}. POST /api/datasets/load; POST /api/datasets/upload multipart; GET /api/datasets/{id}. POST /api/jobs -> {id}; GET /api/jobs/{id} -> {id,status,progress,message,result?,error?,events}; DELETE /api/jobs/{id} cancellation. GET /api/experiments; POST /api/experiments {job_id,name}; DELETE /api/experiments/{id}; GET /api/experiments/{id}. GET /api/jobs/{id}/export?format=json|csv|model. POST /api/metrics/preview {expression,actual,predicted}. Custom metric expression safe AST numeric operations with y, pred, error, abs,sqrt,log,exp,mean,sum,max,min,clip; no eval of arbitrary Python. Extra metrics returned through metric registry.
+
+## Графики (web/charts.js ES module)
+export class ChartManager {constructor(); render(result,options); frame(frame,result); destroy()}. render takes options {theme:'dark'|'light', xFeature:0,yFeature:1, visible:Set|array}. DOM ids plot-fit,plot-3d,plot-loss,plot-coef,plot-residual,plot-prediction,plot-path,plot-correlation,plot-surface,plot-geometry. window.Plotly locally vendored, no external CDN. Additional charts or controls coordinate with root. render dynamically draws all ten and takes loaded results only. Clear labels in Russian, 3D rotate, legends, plot export. Surface/geometry illustrates coefficients for first 2 transformed features with other coefficients fixed, don't misrepresent >2 features. frame plays genuine recorded training steps, recompute predictions for compatible linear model only or animate coefficient/loss panel and label unavailable cases.
+
+## Учебный контент (linear_lab/teaching.py)
+LESSONS list of dict {id,title,summary,sections:[{title,text,formula?}],exercise,preset?:{dataset:{kind,name,params},model,params,epochs?}}. Also GLOSSARY list {term,definition}; METRIC_HELP map. Must explain beginner Russian and distinguish optimization, penalty, robustness.
+
+
+## Расширения действующего API
+POST /api/jobs/{id}/reveal-test открывает итоговую часть. До открытия GET состояния и JSON/CSV-экспорт скрывают ее метрики и строки, включая предсказания кадров. GET /api/jobs/{id}/grid?x_feature=...&y_feature=... строит новый срез сохраненной модели без обучения. POST /api/predict {job_id,rows} прогнозирует новые строки. GET/PATCH /api/datasets/{id}/rows читает страницу и создает новую версию таблицы через changes[{index,values}] и additions. Остальные строки сохраняются.
+
+TrainingService.prediction_grid(request,pipeline,x_feature,y_feature=None) возвращает сетку для любых выбранных исходных числовых столбцов. Диагностики learning_curve и permutation_importance включаются флагами запроса. Метрики возвращают metric_details[{split}][{id}] с причиной отсутствующего значения. metric_catalogue/custom_metric являются алиасами публичного реестра/интерпретатора.
+
+ChartManager включает 12 панелей: дополнительные plot-learning-curve и plot-importance. Режим editPoints выделяет выбранную исходную точку редактируемым кругом Plotly и сообщает onPointMove({index,x,y,featureName}); изменение сохраняется новой версией данных.

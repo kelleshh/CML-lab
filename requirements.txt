@@ -1,0 +1,12 @@
+-c constraints.txt
+numpy==2.3.5
+scipy==1.17.0
+pandas==2.2.3
+scikit-learn==1.8.0
+fastapi==0.143.0
+uvicorn==0.54.0
+python-multipart==0.0.32
+openpyxl==3.1.5
+joblib==1.5.3
+skglm==0.5
+cvxpy==1.9.3
