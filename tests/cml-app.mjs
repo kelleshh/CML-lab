@@ -24,7 +24,8 @@ function exploration(id,query) {
  value.points.color_kind=color?metadata.get(id).columns.find(column=>column.name===color)?.numeric?'numeric':'categorical':null;
  return value;
 }
-globalThis.fetch=async(address,options={})=>{
+globalThis.fetch=async function(address,options={}){
+ assert.equal(this,globalThis,'Browser fetch requires the global receiver');
  const url=new URL(address,window.location.href);const path=url.pathname.replace(/^\/api/,'');const method=options.method||'GET';const body=typeof options.body==='string'?JSON.parse(options.body):options.body;requests.push({path,method,body,query:url.searchParams});
  let value;
  if(path==='/cml/catalogue')value=fixture.catalogue;

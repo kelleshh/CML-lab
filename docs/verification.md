@@ -15,7 +15,7 @@
 
 ```bash
 npm ci
-node --test tests/frontend.mjs tests/frontend-v2.mjs tests/preprocessing-ui.mjs tests/validation-ui.mjs tests/accessibility.mjs tests/sources-ui.mjs tests/ux-routes.mjs tests/learning-page.mjs tests/cml-ux.mjs tests/cml-app.mjs tests/cml-plots.mjs
+node --test tests/frontend.mjs tests/frontend-v2.mjs tests/preprocessing-ui.mjs tests/validation-ui.mjs tests/accessibility.mjs tests/sources-ui.mjs tests/ux-routes.mjs tests/learning-page.mjs tests/cml-ux.mjs tests/cml-app.mjs tests/cml-plots.mjs tests/cml-api.mjs
 ```
 
 Семь прежних DOM-наборов проверяют сохраненные модули линейного интерфейса через `linear-index.html`. Активный CML-интерфейс проверяют `cml-app.mjs`, `cml-ux.mjs` и `cml-plots.mjs`; отдельный учебник проверяет `learning-page.mjs`. Это различие важно: прежние проверки компонентов не подтверждают новый пользовательский путь.
@@ -74,8 +74,10 @@ ORT_DISABLE_TELEMETRY=1 .venv/bin/python tests/capture_cml_ui_fixture.py
 | Проверка | Результат |
 |---|---|
 | Полный `pytest -q tests` после последних исправлений | **1053 passed**, 2384 предупреждения библиотек; 160,82 с |
-| Все 11 интерфейсных наборов из команды выше | **82 passed**, 0 failed |
+| Прежние 11 интерфейсных наборов до исправления fetch | **82 passed**, 0 failed |
 | Повторный захват настоящих API DTO и три активных CML-набора | **23 passed**, 0 failed |
+| Исправление fetch: API, восемь пользовательских сценариев, UX и графики | **25 passed**, 0 failed |
+| Упаковка после исправления fetch | **5 passed**, 0 failed |
 | `pip check` | Нет нарушенных зависимостей |
 | Распакованный ZIP, Linux, путь с пробелами и `&` | Запуск, HTTP, диагностика и корректная остановка прошли |
 | Каталог из распакованной копии | 8 задач, 117 доступных алгоритмов, 25 этапов подготовки |
@@ -86,5 +88,12 @@ ORT_DISABLE_TELEMETRY=1 .venv/bin/python tests/capture_cml_ui_fixture.py
 складываются. Предупреждения численных библиотек остаются в журнале pytest и
 не скрываются. Проверка запуска использует готовое окружение и `--system`.
 Ограничения браузера и других ОС перечислены выше.
+
+Регрессионные проверки `cml-api.mjs` воспроизводят требование браузерного fetch
+к получателю вызова: до исправления загрузка каталога и экспорт давали
+`Illegal invocation`. API-клиент привязывает функцию к `globalThis`. Подставной
+fetch восьми пользовательских сценариев тоже проверяет получателя. Это
+проверка контракта браузерного API; живой браузерный запуск по-прежнему не
+подтвержден.
 
 Список возможностей: [requirements-audit.md](requirements-audit.md); состав архива: [packaging.md](packaging.md).

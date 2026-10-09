@@ -10,7 +10,8 @@ export class ApiError extends Error {
 export class ApiClient {
   constructor(base = '/api', fetcher = globalThis.fetch) {
     this.base = base.replace(/\/$/, '');
-    this.fetcher = fetcher;
+    // Window.fetch requires its browser global as the receiver.
+    this.fetcher = fetcher.bind(globalThis);
   }
 
   async request(path, { method = 'GET', body, signal } = {}) {
