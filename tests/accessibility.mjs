@@ -142,7 +142,9 @@ test('dataset help remains keyboard reachable and Escape hides it while the ques
   assert.equal(doc.activeElement, trigger);
   assert.equal(panel.hidden, true);
   assert.equal(trigger.getAttribute('aria-expanded'), 'false');
-  trigger.click();
+  assert.equal(trigger.target, '_blank');
+  assert.match(trigger.href, /\/lesson\?id=21-read-data/);
+  trigger.blur(); trigger.focus();
   assert.equal(panel.hidden, false);
   panel.querySelector('.dw-help-close').click();
   assert.equal(panel.hidden, true);
@@ -185,10 +187,10 @@ test('switching the raw-data theme updates readable role text without fetching o
   assert.equal(calls.length,fetches);
   assert.equal(JSON.stringify(scatter.data),originalData);
   const update = relayouts.find(item=>item.name==='scatter2d').patch;
-  assert.equal(update['xaxis.title.font.color'],'#076950');
-  assert.equal(update['yaxis.title.font.color'],'#a63d2a');
+  assert.equal(update['xaxis.title.font.color'],'#315e54');
+  assert.equal(update['yaxis.title.font.color'],'#8d521d');
   assert.ok(contrast(update['font.color'],'#ffffff')>=4.5);
-  assert.equal(restyles.find(item=>item.name==='scatter2d').patch['marker.colorbar.title.font.color'],'#a63d2a');
+  assert.equal(restyles.find(item=>item.name==='scatter2d').patch['marker.colorbar.title.font.color'],'#8d521d');
   workspace.destroy();
   dom.window.close();
 });
@@ -235,7 +237,7 @@ test('an open preprocessing preview changes theme from recorded values without r
 });
 
 test('the static shell names its active controls, dialogs and chart view selector without relying on placeholders', async () => {
-  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  const html = await readFile(new URL('../web/linear-index.html', import.meta.url), 'utf8');
   const dom = new JSDOM(html);
   const doc = dom.window.document;
   assert.equal(doc.documentElement.lang, 'ru');

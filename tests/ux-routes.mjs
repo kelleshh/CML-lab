@@ -88,10 +88,12 @@ test('every dataset question opens the named instruction rather than the first l
     for (let ancestor = question.parentElement; ancestor; ancestor = ancestor.parentElement) {
       if (ancestor.tagName === 'DETAILS') ancestor.open = true;
     }
-    question.click();
+    question.focus();
     assert.equal(link.closest('.dw-help-pop').hidden, false);
-    link.click();
-    assertOpenedLesson(id);
+    assert.equal(question.target, '_blank');
+    assert.equal(question.getAttribute('href'), `/lesson?id=${id}`);
+    assert.equal(link.target, '_blank');
+    assert.equal(link.getAttribute('href'), `/lesson?id=${id}`);
     view('data');
   }
 });

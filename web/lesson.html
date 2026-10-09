@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Учебник · CML-lab</title>
+  <link rel="stylesheet" href="/cml.css">
+  <link rel="stylesheet" href="/lesson.css">
+</head>
+<body class="cml-lesson">
+  <a class="lesson-skip" href="#lesson-content">К содержанию урока</a>
+  <header class="lesson-header">
+    <a class="lesson-brand" href="/">CML-lab</a>
+    <span>Учебник классического машинного обучения</span>
+    <button id="lesson-print" type="button">Печать / PDF</button>
+  </header>
+  <div class="lesson-workspace">
+    <aside class="lesson-library" aria-label="Каталог учебника">
+      <label for="lesson-search">Найти объяснение</label>
+      <input id="lesson-search" type="search" placeholder="Порог, дерево, лаг, категории…">
+      <label for="lesson-task">Задача</label>
+      <select id="lesson-task">
+        <option value="">Все задачи</option>
+        <option value="regression">Регрессия</option>
+        <option value="classification">Классификация</option>
+        <option value="clustering">Кластеризация</option>
+        <option value="ranking">Ранжирование</option>
+        <option value="forecasting">Временной ряд</option>
+        <option value="panel">Панельные ряды</option>
+        <option value="anomaly">Поиск аномалий</option>
+        <option value="reduction">Уменьшение размерности</option>
+      </select>
+      <p id="lesson-count" class="lesson-note" aria-live="polite"></p>
+      <nav id="lesson-list" aria-label="Уроки"></nav>
+    </aside>
+    <main id="lesson-content" tabindex="-1" aria-live="polite">
+      <p id="lesson-loading" role="status">Загружаем учебник…</p>
+    </main>
+  </div>
+  <script type="module" src="/lesson.js"></script>
+</body>
+</html>

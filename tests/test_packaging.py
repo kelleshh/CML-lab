@@ -45,13 +45,13 @@ def test_archive_keeps_vendor_provenance_and_launcher_modes_but_excludes_data(so
     packager.write_archive(source_tree, archive)
     with zipfile.ZipFile(archive) as opened:
         names = opened.namelist()
-        assert 'linear-lab/.env.example' in names
+        assert 'CML-lab/.env.example' in names
         assert all('USER_SECRET' not in opened.read(name).decode() for name in names)
         assert not any('__pycache__' in name or name.endswith(('.pyc', '.joblib', '.csv')) for name in names)
-        assert not any(name.startswith('linear-lab/data/') for name in names)
-        assert 'linear-lab/linear_lab/_vendor/smogn-LICENSE' in names
-        assert 'linear-lab/linear_lab/_vendor/upstream-sha256.json' in names
-        assert all((opened.getinfo('linear-lab/' + name).external_attr >> 16) & 0o111
+        assert not any(name.startswith('CML-lab/data/') for name in names)
+        assert 'CML-lab/linear_lab/_vendor/smogn-LICENSE' in names
+        assert 'CML-lab/linear_lab/_vendor/upstream-sha256.json' in names
+        assert all((opened.getinfo('CML-lab/' + name).external_attr >> 16) & 0o111
                    for name in packager.EXECUTABLES)
         assert opened.testzip() is None
 
@@ -79,3 +79,19 @@ def test_missing_executable_mode_and_inside_tree_output_are_rejected(source_tree
         packager.release_files(source_tree)
     with pytest.raises(ValueError, match='outside'):
         packager.write_archive(source_tree, source_tree / 'release.zip')
+
+
+def test_data_and_experiment_bounded_contexts_are_packaged(source_tree, tmp_path):
+    for context in ('data', 'experiments', 'recipes', 'execution', 'learning'):
+        directory = source_tree / 'cml_lab' / 'contexts' / context
+        directory.mkdir(parents=True)
+        (directory / 'domain.py').write_text('domain source')
+    runtime = source_tree / 'cml_lab' / 'artifacts'
+    runtime.mkdir()
+    (runtime / 'user-model.json').write_text('private state')
+    archive = tmp_path / 'cml.zip'
+    packager.write_archive(source_tree, archive)
+    with zipfile.ZipFile(archive) as opened:
+        for context in ('data', 'experiments', 'recipes', 'execution', 'learning'):
+            assert f'CML-lab/cml_lab/contexts/{context}/domain.py' in opened.namelist()
+        assert 'CML-lab/cml_lab/artifacts/user-model.json' not in opened.namelist()

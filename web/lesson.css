@@ -1,0 +1,76 @@
+.cml-lesson {
+  margin: 0;
+  color: var(--text, #282722);
+  background: var(--bg, #e8e3d6);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+}
+.lesson-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--line, #b8af9d);
+  background: var(--panel, #fff);
+}
+.lesson-brand { color: var(--accent, #803748); font-weight: 750; font-size: 22px; }
+.lesson-header span { flex: 1; color: var(--muted, #625d50); }
+.cml-lesson button, .cml-lesson input, .cml-lesson select {
+  font: inherit;
+  min-height: 44px;
+  border: 1px solid var(--line, #b8af9d);
+  border-radius: 3px;
+  padding: 8px 12px;
+  background: var(--panel, #fff);
+  color: inherit;
+}
+.cml-lesson a { color: var(--accent, #803748); text-underline-offset: 3px; }
+.lesson-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 30px;
+  max-width: 1530px;
+  margin: 0 auto;
+  padding: 28px;
+}
+.lesson-library { position: sticky; top: 20px; align-self: start; max-height: calc(100vh - 40px); overflow: auto; }
+.lesson-library label { display: block; font-weight: 650; margin: 14px 0 5px; }
+.lesson-library input, .lesson-library select { width: 100%; box-sizing: border-box; }
+#lesson-list { display: grid; gap: 5px; }
+.lesson-item { display: block; padding: 10px 12px; border: 1px solid transparent; border-radius: 3px; text-decoration: none; }
+.lesson-item:hover { background: var(--panel2, #eee9dc); }
+.lesson-item[aria-current="page"] { border-color: var(--accent, #803748); background: var(--panel, #fff); font-weight: 650; }
+.lesson-note { font-size: 14px; color: var(--muted, #625d50); }
+#lesson-content { background: var(--panel, #fff); border: 1px solid var(--line, #b8af9d); padding: clamp(24px, 4vw, 52px); min-width: 0; }
+#lesson-content h1 { font-size: clamp(25px, 3vw, 37px); line-height: 1.28; margin: 8px 0 18px; }
+#lesson-content h2 { font-size: 23px; line-height: 1.35; margin: 34px 0 12px; }
+#lesson-content p { margin: 0 0 18px; max-width: 95ch; }
+.lesson-summary { font-size: 19px; color: var(--muted, #625d50); }
+.lesson-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.lesson-tag { border: 1px solid var(--line, #b8af9d); padding: 2px 8px; font-size: 14px; background: var(--panel2, #eee9dc); }
+.lesson-actions { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 22px 0; }
+.lesson-open-preset { display: inline-block; background: var(--accent, #803748); color: var(--accent-ink, #fff) !important; padding: 10px 18px; border-radius: 3px; text-decoration: none; font-weight: 650; }
+.lesson-formula { display: block; white-space: pre-wrap; overflow-wrap: anywhere; padding: 15px 18px; border-left: 4px solid var(--accent, #803748); background: var(--panel2, #eee9dc); font-size: 16px; font-family: "DejaVu Sans Mono", Consolas, monospace; }
+.lesson-exercise { padding: 18px 22px; border: 1px solid var(--line, #b8af9d); background: var(--panel2, #eee9dc); }
+.lesson-sources li { margin-bottom: 12px; overflow-wrap: anywhere; }
+.lesson-sources small { display: block; color: var(--muted, #625d50); }
+.lesson-error { border-left: 4px solid var(--danger, #9e3135); padding: 16px; background: var(--panel2, #eee9dc); }
+.lesson-skip { position: fixed; left: 12px; top: -100px; background: var(--panel, #fff); padding: 12px; z-index: 100; }
+.lesson-skip:focus { top: 12px; }
+.cml-lesson :focus-visible { outline: 3px solid var(--accent, #803748); outline-offset: 3px; }
+@media (max-width: 850px) {
+  .lesson-workspace { grid-template-columns: 1fr; padding: 14px; gap: 18px; }
+  .lesson-library { position: static; max-height: none; }
+  #lesson-list { max-height: 260px; overflow: auto; }
+  .lesson-header { padding: 12px 16px; gap: 12px; }
+  .lesson-header span { flex-basis: 100%; order: 3; }
+}
+@media print {
+  .lesson-header, .lesson-library, .lesson-actions, .lesson-skip { display: none; }
+  .lesson-workspace { display: block; padding: 0; }
+  #lesson-content { border: 0; padding: 0; }
+  .cml-lesson { color: #000; background: #fff; }
+  .lesson-formula, .lesson-exercise { break-inside: avoid; }
+  #lesson-content h2 { break-after: avoid; }
+  .lesson-sources a::after { content: " (" attr(href) ")"; font-size: 11px; }
+}

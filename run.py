@@ -20,10 +20,10 @@ import venv
 import webbrowser
 
 PROJECT = Path(__file__).resolve().parent
-APP_TITLE = 'Линейная лаборатория'
+APP_TITLE = 'CML-lab'
 PYTHON_DOWNLOAD = 'https://www.python.org/downloads/'
-MIN_PYTHON = (3, 11)
-LOGGER = logging.getLogger('linear_lab.launcher')
+MIN_PYTHON = (3, 12)
+LOGGER = logging.getLogger('cml_lab.launcher')
 
 
 class LauncherError(RuntimeError):
@@ -53,8 +53,14 @@ def load_env(project: Path) -> None:
                 os.environ.setdefault(key, value.strip().strip('"\''))
 
 
+def data_directory() -> Path:
+    """The new variable wins; an explicit old setting remains a migration alias."""
+    configured = os.environ.get('CML_LAB_DATA') or os.environ.get('LINEAR_LAB_DATA')
+    return Path(configured or str(Path.home() / '.cml-lab')).expanduser()
+
+
 def configure_logging() -> Path:
-    data = Path(os.environ.get('LINEAR_LAB_DATA', str(Path.home() / '.linear-lab'))).expanduser()
+    data = data_directory()
     data.mkdir(parents=True, exist_ok=True)
     logfile = data / 'launcher.log'
     LOGGER.setLevel(logging.INFO)
@@ -199,7 +205,16 @@ def prepare_environment(project: Path) -> Path:
             raise LauncherError('Не удалось создать окружение. На Linux проверьте наличие пакета python3-venv. Убедитесь, что папка проекта доступна для записи. Можно использовать подготовленный Python с параметром --system.') from exc
     else:
         LOGGER.info('[2/4] Используем готовое окружение Python.')
-    stamp = project / '.venv' / 'linear-lab-requirements.txt'
+        try:
+            supported = subprocess.run(
+                [str(interpreter), '-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'],
+                cwd=project, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10
+            ).returncode == 0
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise LauncherError('Не удалось запустить Python из .venv. Переименуйте эту папку и запустите снова, чтобы создать новое окружение.') from exc
+        if not supported:
+            raise LauncherError('Окружение .venv использует Python старее 3.12. Переименуйте .venv и повторите запуск с Python 3.12; пользовательские данные хранятся отдельно.')
+    stamp = project / '.venv' / 'cml-lab-requirements.txt'
     signature = requirements_signature(project)
     if not stamp.exists() or stamp.read_text(encoding='utf-8') != signature:
         LOGGER.info('[3/4] Устанавливаем библиотеки. Первый запуск может занять несколько минут; нужен интернет.')
@@ -210,11 +225,24 @@ def prepare_environment(project: Path) -> Path:
     return interpreter
 
 
-def direct_dependencies(project: Path) -> list[tuple[str, str]]:
+def direct_dependencies(project: Path, platform: str | None = None) -> list[tuple[str, str]]:
+    """Read exact pins and the two platform markers used by this release.
+
+    The launcher must work before pip/packaging are installed. Unsupported
+    marker expressions are reported rather than silently skipped by diagnosis.
+    """
     dependencies = []
+    platform = sys.platform if platform is None else platform
     for line in (project / 'requirements.txt').read_text(encoding='utf-8').splitlines():
-        match = re.fullmatch(r'\s*([A-Za-z0-9_.-]+)==([^\s;]+)\s*(?:#.*)?', line)
+        match = re.fullmatch(r'\s*([A-Za-z0-9_.-]+)==([^\s;]+)\s*(?:;\s*([^#]+))?\s*(?:#.*)?', line)
         if match:
+            if match[3]:
+                marker = re.fullmatch(r"sys_platform\s*(==|!=)\s*['\"]([^'\"]+)['\"]\s*", match[3])
+                if marker is None:
+                    raise LauncherError('Неизвестное условие зависимости: ' + match[3])
+                equal = platform == marker[2]
+                if not (equal if marker[1] == '==' else not equal):
+                    continue
             dependencies.append((match[1], match[2]))
     return dependencies
 
@@ -235,15 +263,24 @@ def doctor(project: Path, options: argparse.Namespace) -> int:
             failures += 1
             LOGGER.error('✗ %s: не установлена', distribution)
     try:
-        from linear_lab.models import ModelRegistry
-        catalogue = ModelRegistry().catalogue()
-        LOGGER.info('✓ Реестр моделей: %s моделей', len(catalogue))
+        from cml_lab.infrastructure.ml.catalogue import AlgorithmCatalogue
+        from cml_lab.shared.domain import TaskKind
+        catalogue = AlgorithmCatalogue().catalogue()
+        unavailable = [item for item in catalogue if not item['available']]
+        LOGGER.info('✓ Реестр: %s алгоритмов, доступно %s, задач %s', len(catalogue), len(catalogue) - len(unavailable), len(TaskKind))
+        for task in TaskKind:
+            count = sum(task.value in item['tasks'] and item['available'] for item in catalogue)
+            LOGGER.info('  %s: %s доступных алгоритмов', task.value, count)
+        for item in unavailable:
+            failures += 1
+            LOGGER.error('✗ %s: %s', item['name'], item['reason'])
     except Exception as exc:
         failures += 1
         LOGGER.error('✗ Реестр моделей не загружается: %s', exc)
         LOGGER.debug('Подробности ошибки реестра', exc_info=True)
-    if options.port and probe_lab(options.host, options.port):
-        LOGGER.info('✓ Лаборатория уже работает: %s', service_url(options.host, options.port))
+    existing = running_instance(options)
+    if existing:
+        LOGGER.info('✓ Лаборатория уже работает: %s', existing)
     else:
         try:
             reserved, port = reserve_port(options.host, options.port)
@@ -260,17 +297,14 @@ def doctor(project: Path, options: argparse.Namespace) -> int:
 
 
 def instance_file() -> Path:
-    data = Path(os.environ.get('LINEAR_LAB_DATA', str(Path.home() / '.linear-lab'))).expanduser()
-    return data / 'running-server.json'
+    return data_directory() / 'running-server.json'
 
 
 def running_instance(options: argparse.Namespace) -> str | None:
-    if options.port and probe_lab(options.host, options.port):
-        return service_url(options.host, options.port)
     try:
         saved = json.loads(instance_file().read_text(encoding='utf-8'))
-        # Запуски с разными папками данных или проектами должны оставаться независимыми.
-        if saved.get('project') == str(PROJECT) and saved.get('host') == options.host:
+        # Повторное открытие допустимо только для этой копии проекта и ее папки данных.
+        if isinstance(saved, dict) and saved.get('project') == str(PROJECT) and saved.get('host') == options.host:
             port = int(saved['port'])
             if 0 < port <= 65535 and probe_lab(options.host, port):
                 return service_url(options.host, port)
@@ -312,7 +346,8 @@ def readiness_monitor(server, host: str, port: int, open_window: bool, stop: thr
 
 def serve(options: argparse.Namespace) -> int:
     import uvicorn
-    from linear_lab.app import create_app
+    from cml_lab.presentation.http.api import create_app
+    from cml_lab.shared.domain import ConflictError
 
     reserved, port = reserve_port(options.host, options.port)
     url = service_url(options.host, port)
@@ -324,8 +359,13 @@ def serve(options: argparse.Namespace) -> int:
         logger.handlers = LOGGER.handlers[:]
         logger.propagate = False
     stop = threading.Event()
+    server = None
     try:
-        config = uvicorn.Config(create_app(), host=options.host, port=port, log_level='warning', log_config=None)
+        try:
+            app = create_app()
+        except ConflictError as exc:
+            raise LauncherError(str(exc)) from exc
+        config = uvicorn.Config(app, host=options.host, port=port, log_level='warning', log_config=None)
         server = uvicorn.Server(config)
         monitor = threading.Thread(target=readiness_monitor, args=(server, options.host, port, not options.no_browser, stop), daemon=True)
         monitor.start()
@@ -336,17 +376,18 @@ def serve(options: argparse.Namespace) -> int:
         reserved.close()
         try:
             saved = json.loads(instance_file().read_text(encoding='utf-8'))
-            if saved.get('pid') == os.getpid():
+            if isinstance(saved, dict) and saved.get('pid') == os.getpid():
                 instance_file().unlink(missing_ok=True)
         except (OSError, ValueError):
             pass
-        LOGGER.info('Лаборатория остановлена.')
+        if server is not None and server.started:
+            LOGGER.info('Лаборатория остановлена.')
 
 
 def main(argv: list[str] | None = None) -> int:
     options = argument_parser().parse_args(argv)
     if sys.version_info < MIN_PYTHON:
-        print(f'Нужен Python 3.11 или новее. Установите Python с {PYTHON_DOWNLOAD}', flush=True)
+        print(f'Нужен Python 3.12 или новее. Установите Python с {PYTHON_DOWNLOAD}', flush=True)
         return 1
     if not 0 <= options.port <= 65535:
         print('Порт должен быть от 1 до 65535, либо 0 для автоматического выбора.', flush=True)
@@ -373,14 +414,14 @@ def main(argv: list[str] | None = None) -> int:
             if not options.no_browser:
                 open_browser(existing)
             return 0
-        if not os.environ.get('LINEAR_LAB_BOOTSTRAPPED'):
+        if not os.environ.get('CML_LAB_BOOTSTRAPPED'):
             LOGGER.info('[1/4] Python %s найден.', sys.version.split()[0])
         if not options.system:
             interpreter = prepare_environment(PROJECT)
             child_env = os.environ.copy()
-            child_env['LINEAR_LAB_BOOTSTRAPPED'] = '1'
+            child_env['CML_LAB_BOOTSTRAPPED'] = '1'
             return call_child(child_command(interpreter, PROJECT, options), PROJECT, child_env)
-        if not os.environ.get('LINEAR_LAB_BOOTSTRAPPED'):
+        if not os.environ.get('CML_LAB_BOOTSTRAPPED'):
             LOGGER.info('[2/4] Используем текущее окружение (--system).')
             LOGGER.info('[3/4] Загружаем установленные библиотеки.')
         return serve(options)

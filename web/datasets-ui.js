@@ -1,8 +1,9 @@
+import { SchemaForm } from './cml/schema-form.js';
 /** Dataset library and raw-data exploration, independent of training. */
-const FEATURE = "#66e4bc";
-const TARGET = "#ff927e";
-const CATEGORY_COLORS = ["#66e4bc", "#ff927e", "#a9a1ff", "#ffd17c", "#6acbff", "#e38dc6", "#b5de82", "#e5b7a0"];
-const TASKS = { regression: "Регрессия · предсказать число", classification: "Классификация · определить класс", clustering: "Кластеризация · найти группы", time_series: "Временные ряды · учитывать порядок", other: "Другая задача / цель еще не выбрана" };
+const FEATURE = "#315e54";
+const TARGET = "#8d521d";
+const CATEGORY_COLORS = ["#315e54", "#8d521d", "#37624c", "#8b448a", "#437684", "#7a6233", "#6a6a6a", "#af4055"];
+const TASKS = { forecasting: "Временные ряды · прогноз будущего", panel: "Панельные ряды · время и объект", ranking: "Ранжирование · порядок внутри запроса", anomaly: "Аномалии · необычные наблюдения", reduction: "Снижение размерности · новые координаты", regression: "Регрессия · предсказать число", classification: "Классификация · определить класс", clustering: "Кластеризация · найти группы", time_series: "Временные ряды · учитывать порядок", other: "Другая задача / цель еще не выбрана" };
 const SOURCES = { synthetic: "Созданные здесь", sklearn: "Scikit-learn", upload: "Мои файлы", custom: "Ручной ввод", openml: "OpenML", builtin: "Встроенные", fetch: "Из интернета" };
 const SYNTHETIC = { linear: "Прямая зависимость", correlated: "Признаки повторяют друг друга", sparse: "Много лишних признаков", nonlinear: "Изогнутая зависимость", heteroscedastic: "Разброс растет вместе с признаком", positive: "Только положительная цель", counts: "Число событий", grouped: "Группы полезных признаков", fused: "Похожие соседние коэффициенты" };
 const SCENARIOS = {
@@ -15,8 +16,8 @@ const SCENARIOS = {
 };
 const HELP = {
   library: ["Мои датасеты", "Здесь остаются загруженные файлы, готовые наборы и созданные примеры. Это сами данные, а не обученные модели. У каждого набора можно выбрать задачу и цель, изменить название и выгрузить CSV.", "21-read-data"],
-  task: ["Задача набора", "Регрессия предсказывает число: цену, длительность, температуру. Классификация предсказывает категорию: сорт растения или диагноз. Набор для классификации можно исследовать здесь; линейной регрессии нужна числовая цель.", "21-read-data"],
-  target: ["Цель — что хотим предсказывать", "Цель, или таргет, — правильный ответ для каждого наблюдения. Например, цена квартиры. Признаки — известные сведения: площадь и этаж. Цель выделена коралловым, признаки — мятным. Выбор цели здесь управляет исследованием данных.", "01-prediction"],
+  task: ["Задача набора", "Регрессия предсказывает число: цену, длительность, температуру. Классификация предсказывает категорию: сорт растения или диагноз. В конструкторе можно выбрать задачу: регрессию, классификацию, поиск групп и другие. Тип цели должен соответствовать задаче.", "21-read-data"],
+  target: ["Цель — что хотим предсказывать", "Цель, или таргет, — правильный ответ для каждого наблюдения. Например, цена квартиры. Признаки — известные сведения: площадь и этаж. Цель выделена коричневым, признаки — зеленым. Выбор цели здесь управляет исследованием данных.", "01-prediction"],
   noise: ["Шум — случайная часть цели", "Шум добавляется к рассчитанному правильному ответу. Он создает разброс: даже одинаковые признаки не гарантируют одинаковую цель. «Нет» = 0; «Небольшой» = 3; «Обычный» = 8; «Сильный» = 25 в единицах цели. Это настройки генератора, а не ошибка уже обученной модели.", "21-read-data"],
   correlation: ["Насколько признаки похожи", "Если один признак растет вместе с другим, они положительно коррелируют. В этом генераторе настройка задает одинаковую попарную корреляцию: слабая = 0.1, средняя = 0.6, сильная = 0.95. Похожие признаки могут делать коэффициенты обычной регрессии нестабильными.", "05-scaling-correlation"],
   outliers: ["Выбросы — необычные наблюдения", "Генератор выбирает заданную долю строк и добавляет очень большую ошибку к цели. Значение 10% означает примерно одну строку из десяти. В реальной таблице необычная точка не обязательно ошибочна: выясните причину перед удалением.", "21-read-data"],
@@ -31,7 +32,7 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&
 const number = (value) => value == null || !Number.isFinite(Number(value)) ? "—" : new Intl.NumberFormat("ru", { maximumFractionDigits: 4 }).format(Number(value));
 let tooltipSequence = 0;
 let workspaceSequence = 0;
-const METADATA_TASKS = ["regression", "classification", "clustering", "time_series", "other"];
+const METADATA_TASKS = Object.keys(TASKS);
 const options = (values, selected = "") => values.map((value) => {
   const item = typeof value === "string" ? { value, label: value } : value;
   return `<option value="${esc(item.value)}" ${String(item.value) === String(selected) ? "selected" : ""}>${esc(item.label)}</option>`;
@@ -39,7 +40,7 @@ const options = (values, selected = "") => values.map((value) => {
 function help(key) {
   const [title, text, anchor] = HELP[key] || [key, key, "21-read-data"];
   const id = `dw-help-${++tooltipSequence}`;
-  return `<span class="dw-help-wrap"><button type="button" class="dw-help" aria-label="Подробнее: ${esc(title)}" aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}">?</button><span class="dw-help-pop" id="${id}" role="dialog" aria-modal="false" aria-labelledby="${id}-title" hidden><strong id="${id}-title">${esc(title)}</strong><span>${esc(text)}</span><button type="button" class="dw-help-close" aria-label="Закрыть пояснение">×</button><a href="#learn" data-dw-help="${esc(anchor)}">Открыть описание в инструкции ↗</a></span></span>`;
+  return `<span class="dw-help-wrap"><a class="dw-help" href="/lesson?id=${encodeURIComponent(anchor)}" target="_blank" rel="noopener" aria-label="Подробнее: ${esc(title)}; новая вкладка" aria-haspopup="dialog" aria-expanded="false" aria-controls="${id}">?</a><span class="dw-help-pop" id="${id}" role="dialog" aria-modal="false" aria-labelledby="${id}-title" hidden><strong id="${id}-title">${esc(title)}</strong><span>${esc(text)}</span><button type="button" class="dw-help-close" aria-label="Закрыть пояснение">×</button><a href="/lesson?id=${encodeURIComponent(anchor)}" target="_blank" rel="noopener" data-dw-help="${esc(anchor)}">Открыть описание в инструкции ↗</a></span></span>`;
 }
 class DatasetWorkspace {
   constructor({ api, onSelect, onCreated, onEdit, onHelp, onError, onDeleted } = {}) {
@@ -186,7 +187,7 @@ class DatasetWorkspace {
     if (wrap && event.target.matches('.dw-help') && event.key === 'ArrowDown') {
       event.preventDefault();
       this.openHelp(wrap, true);
-      wrap.querySelector('a')?.focus();
+      wrap.querySelector('.dw-help-pop a')?.focus();
     }
     if (event.key === 'Escape') {
       const open = [...this.container.querySelectorAll('.dw-help-wrap.is-open')];
@@ -203,11 +204,20 @@ class DatasetWorkspace {
     return `<div class="dw-creation-grid"><div><h3>1. Что хотите увидеть?</h3><label>Учебный сценарий<select data-dw="scenario">${options(Object.entries(SCENARIOS).map(([value, item]) => ({ value, label: item.label })), "realistic")}</select></label><p class="dw-scenario-description"></p><label>Тип зависимости<select data-dw="generator">${options(Object.entries(SYNTHETIC).map(([value, label]) => ({ value, label })), "linear")}</select></label><p class="dw-generator-note"></p></div><div><h3>2. Настройте таблицу</h3><div class="dw-two"><label>Наблюдений, строк<input data-dw="n-samples" type="number" min="12" max="100000" step="10" value="180"></label><label><span class="dw-feature">Признаков</span>, столбцов<input data-dw="n-features" type="number" min="1" max="100" value="2"></label></div><label>Разброс <span class="dw-target">цели</span> ${help("noise")}<select data-dw="noise-preset"><option value="0">Нет — точная зависимость</option><option value="3">Небольшой — точки близко</option><option value="8" selected>Обычный — заметный разброс</option><option value="25">Сильный — зависимость труднее увидеть</option></select></label><label>Похожесть <span class="dw-feature">признаков</span> ${help("correlation")}<select data-dw="correlation-preset"><option value="0.1">Слабая — разная информация</option><option value="0.6">Средняя — часть информации общая</option><option value="0.95">Сильная — почти дубликаты</option></select></label><label>Необычные точки ${help("outliers")}<select data-dw="outliers-preset"><option value="0">Без выбросов</option><option value="0.05">Немного — 5% строк</option><option value="0.1">Заметно — 10% строк</option><option value="0.25">Много — 25% строк</option></select></label></div></div><details class="dw-advanced"><summary>Точные значения и дополнительные настройки</summary><p>Эти поля переопределяют варианты выше. Для первого опыта достаточно готовых вариантов.</p><div class="dw-four"><label>Шум, стандартное отклонение<input data-dw="noise-exact" type="number" min="0" max="10000" step="any" placeholder="Из варианта выше"></label><label>Корреляция признаков<input data-dw="correlation-exact" type="number" min="-0.99" max="0.9999" step="0.01" placeholder="Из варианта выше"></label><label>Доля лишних признаков<input data-dw="sparsity" type="number" min="0" max="1" step="0.05" value="0.7"></label><label>Разница масштабов, порядки<input data-dw="scale-spread" type="number" min="0" max="6" step="0.5" value="0"></label></div><p>Доля лишних признаков действует в сценарии поиска полезных признаков. Разница масштабов 3 дает отношение до 1000 раз.</p></details><div class="dw-create-footer"><label>Зерно случайности ${help("seed")}<input data-dw="seed" type="number" min="0" max="1000000" value="42"></label><button class="dw-button dw-primary" data-dw-action="create">Создать и исследовать</button></div>`;
   }
   sourcesMarkup() {
-    return `<div class="dw-import-grid"><div class="dw-import-card"><h3>Своя таблица</h3><p>CSV, TSV или Excel · до 25 МБ. Столбцы станут признаками; цель выберете после загрузки.</p><label class="dw-file-label">Выберите файл<input data-dw="upload" type="file" accept=".csv,.tsv,.xlsx,.xls"></label></div><div class="dw-import-card"><h3>OpenML</h3><p>Открытые данные по числовому ID или имени. Для загрузки нужен интернет.</p><div class="dw-two"><label>ID набора<input data-dw="openml-id" type="number" min="1" placeholder="531"></label><label>или название<input data-dw="openml-name" type="text" placeholder="boston"></label></div><button class="dw-button dw-secondary" data-dw-action="openml">Добавить в библиотеку</button></div></div><div class="dw-toolbar"><label class="dw-search">Каталог scikit-learn<input data-dw="source-search" type="search" placeholder="Ирисы, жилье, make_regression…"></label><label>Задача<select data-dw="source-task"><option value="">Все задачи</option>${options(Object.entries(TASKS).map(([value, label]) => ({ value, label })))}</select></label><label>Доступность<select data-dw="source-support"><option value="supported">Можно загрузить</option><option value="all">Показать весь каталог</option></select></label></div><p class="dw-note">Задача описывает исходный набор. Классы можно раскрасить на графике. Для обучения линейной регрессии выберите числовую цель.</p><div class="dw-source-grid"></div>`;
+    return `<div class="dw-import-grid"><div class="dw-import-card"><h3>Своя таблица</h3><p>CSV, TSV или Excel · до 25 МБ. Столбцы станут признаками; цель выберете после загрузки.</p><label class="dw-file-label">Выберите файл<input data-dw="upload" type="file" accept=".csv,.tsv,.xlsx,.xls"></label></div><div class="dw-import-card"><h3>OpenML</h3><p>Открытые данные по числовому ID или имени. Для загрузки нужен интернет.</p><div class="dw-two"><label>ID набора<input data-dw="openml-id" type="number" min="1" placeholder="531"></label><label>или название<input data-dw="openml-name" type="text" placeholder="boston"></label></div><button class="dw-button dw-secondary" data-dw-action="openml">Добавить в библиотеку</button></div></div><div class="dw-toolbar"><label class="dw-search">Каталог scikit-learn<input data-dw="source-search" type="search" placeholder="Ирисы, жилье, make_regression…"></label><label>Задача<select data-dw="source-task"><option value="">Все задачи</option>${options(Object.entries(TASKS).map(([value, label]) => ({ value, label })))}</select></label><label>Доступность<select data-dw="source-support"><option value="supported">Можно загрузить</option><option value="all">Показать весь каталог</option></select></label></div><p class="dw-note">Задача описывает исходный набор. Классы можно раскрасить на графике. Выберите задачу и роли столбцов в конструкторе эксперимента.</p><div class="dw-source-grid"></div>`;
   }
   setCatalogue(catalogue) {
     this.catalogue = Array.isArray(catalogue) ? catalogue : catalogue?.datasets || [];
-    if (this.container) this.renderSources();
+    if (this.container) {
+      this.renderSources();
+      const generator = this.field('generator');
+      for (const item of this.catalogue.filter(item => item.kind === 'synthetic' && item.supported && item.params?.length && !item.name.startsWith('make_'))) {
+        if (![...generator.options].some(option => option.value === item.name)) {
+          const option = this.container.ownerDocument.createElement('option'); option.value = item.name; option.textContent = item.label || item.name; generator.append(option);
+        }
+      }
+      this.renderGeneratorNote();
+    }
     return this;
   }
   setDataset(metadata) {
@@ -293,7 +303,7 @@ class DatasetWorkspace {
     const search = (this.field("source-search")?.value || "").toLowerCase();
     const task = this.field("source-task")?.value;
     const supported = this.field("source-support")?.value !== "all";
-    const items = this.catalogue.filter((item) => !(item.kind === "synthetic" && !item.name?.startsWith("make_")) && (!supported || item.supported) && (!task || (item.tasks || [item.task]).includes(task)) && (!search || [item.label, item.name, item.description].join(" ").toLowerCase().includes(search)));
+    const items = this.catalogue.filter((item) => !(item.kind === "synthetic" && Object.hasOwn(SYNTHETIC, item.name)) && (!supported || item.supported) && (!task || (item.tasks || [item.task]).includes(task)) && (!search || [item.label, item.name, item.description].join(" ").toLowerCase().includes(search)));
     const groups = /* @__PURE__ */ new Map();
     for (const item of items) {
       const key = item.task || "unknown";
@@ -318,9 +328,24 @@ class DatasetWorkspace {
   renderGeneratorNote() {
     const name = this.field("generator").value;
     const catalogue = this.catalogue.find((item) => item.name === name);
+    const custom = catalogue?.kind === 'synthetic' && catalogue.params?.length && !Object.hasOwn(SYNTHETIC, name);
+    let parameters = this.container.querySelector('.dw-generator-parameters');
+    if (!parameters) {
+      parameters = this.container.ownerDocument.createElement('section'); parameters.className = 'cml-panel dw-generator-parameters';
+      this.container.querySelector('.dw-creation-grid').after(parameters);
+    }
+    parameters.hidden = !custom;
+    this.container.querySelector('.dw-creation-grid>div:last-child').hidden = Boolean(custom);
+    this.container.querySelector('.dw-advanced').hidden = Boolean(custom);
+    this.container.querySelector('.dw-create-footer>label').hidden = Boolean(custom);
+    this.advancedGenerator = custom ? new SchemaForm().mount(parameters, catalogue.params.map(field => ({ lesson_id: '21-read-data', ...field }))) : null;
     this.container.querySelector(".dw-generator-note").textContent = catalogue?.description || ({ positive: "Цель строго положительная: можно проверить Gamma и Tweedie.", counts: "Цель — неотрицательное число событий: подойдет регрессия Пуассона.", nonlinear: "Добавлен квадрат первого признака: исследуйте кривую в 2D." }[name] || "Цель получается из вкладов признаков и случайного разброса.");
   }
   createSpec() {
+    if (this.advancedGenerator) {
+      if (!this.advancedGenerator.valid()) throw new Error('Проверьте поля генератора данных.');
+      return { kind: 'synthetic', name: this.field('generator').value, params: this.advancedGenerator.values() };
+    }
     const exact = (key, fallback) => {
       const value = this.field(key).value;
       return value.trim() === "" ? Number(this.field(fallback).value) : Number(value);
@@ -331,7 +356,7 @@ class DatasetWorkspace {
     await this.guarded(async () => {
       this.status("Создаем таблицу…");
       const spec = this.createSpec();
-      if (!Number.isInteger(spec.params.n_samples) || !Number.isInteger(spec.params.n_features)) throw new Error("Количество строк и признаков должно быть целым.");
+      if (!Number.isInteger(spec.params.n_samples) || (spec.params.n_features !== undefined && !Number.isInteger(spec.params.n_features))) throw new Error("Количество строк и признаков должно быть целым.");
       const meta = await this.api("/datasets/load", { method: "POST", body: spec });
       this.setDataset(meta);
       await this.onCreated(meta);
@@ -481,19 +506,19 @@ class DatasetWorkspace {
   }
   layout(extra = {}) {
     const light = document.body.dataset.theme === "light";
-    return { paper_bgcolor: "transparent", plot_bgcolor: "transparent", font: { family: "Inter, system-ui, sans-serif", size: 14, color: light ? "#283d49" : "#c3d2dd" }, margin: { l: 60, r: 35, t: 15, b: 55 }, autosize: true, hovermode: "closest", uirevision: this.dataset?.id, ...extra };
+    return { paper_bgcolor: "transparent", plot_bgcolor: "transparent", font: { family: "Inter, system-ui, sans-serif", size: 14, color: light ? "#282722" : "#f5efdf" }, margin: { l: 60, r: 35, t: 15, b: 55 }, autosize: true, hovermode: "closest", uirevision: this.dataset?.id, ...extra };
   }
   roleColor(color = FEATURE) {
-    if (this.container.ownerDocument.body.dataset.theme !== 'light') return color;
-    return color === FEATURE ? '#076950' : color === TARGET ? '#a63d2a' : color;
+    if (this.container.ownerDocument.body.dataset.theme !== 'dark') return color;
+    return color === FEATURE ? '#a9d3c4' : color === TARGET ? '#e7bd86' : color;
   }
   axis(label, color) {
-    return { title: { text: label, font: { color: this.roleColor(color || FEATURE), size: 14 } }, gridcolor: document.body.dataset.theme === "light" ? "#dee8ee" : "#2a3a49", zerolinecolor: "#41536a", automargin: true };
+    return { title: { text: label, font: { color: this.roleColor(color || FEATURE), size: 14 } }, gridcolor: document.body.dataset.theme === "light" ? "#d8d0bd" : "#766f5f", zerolinecolor: "#41536a", automargin: true };
   }
   refreshTheme() {
     if (!window.Plotly?.relayout || !this.container) return Promise.resolve();
     const target = this.field('explore-target')?.value;
-    const grid = this.container.ownerDocument.body.dataset.theme === 'light' ? '#dee8ee' : '#2a3a49';
+    const grid = this.container.ownerDocument.body.dataset.theme === 'light' ? '#d8d0bd' : '#766f5f';
     const updates = [...this.container.querySelectorAll('[data-dw-plot]')].filter(node => node.data?.length).map(node => {
       const patch = {'font.color': this.layout().font.color, 'font.size': 14};
       for (const key of ['xaxis', 'yaxis', 'xaxis2', 'yaxis2', 'scene.xaxis', 'scene.yaxis', 'scene.zaxis']) {
@@ -541,18 +566,18 @@ class DatasetWorkspace {
     } else {
       const markerColor = isNumericColor ? valid.map((i) => colors[i]) : FEATURE;
       const trace = makeTrace(valid, values.color || "Наблюдения", markerColor);
-      if (isNumericColor) Object.assign(trace.marker, { colorscale: [[0, "#79b9ef"], [0.5, "#b2d7ca"], [1, TARGET]], showscale: true, colorbar: { title: { text: values.color, font: { color: this.roleColor(values.color === target ? TARGET : FEATURE), size: 14 } }, thickness: 12 } });
+      if (isNumericColor) Object.assign(trace.marker, { colorscale: [[0, FEATURE], [0.5, "#b8af9d"], [1, TARGET]], showscale: true, colorbar: { title: { text: values.color, font: { color: this.roleColor(values.color === target ? TARGET : FEATURE), size: 14 } }, thickness: 12 } });
       traces = [trace];
     }
     this.plot("scatter2d", traces, { xaxis: this.axis(values.x, values.x === target ? TARGET : FEATURE), yaxis: this.axis(values.y, values.y === target ? TARGET : FEATURE), legend: { orientation: "h", y: -0.25 }, margin: { l: 65, r: isNumericColor ? 70 : 25, t: 10, b: 70 } });
     this.render3D(payload, values);
     const hist = this.normalizeHistograms(payload.histograms, values, p);
     const htraces = hist.map((item, index) => item.counts ? { type: "bar", name: item.name, x: item.centers || item.labels || [], y: item.counts, ...item.width ? { width: item.width } : {}, marker: { color: item.name === target ? TARGET : FEATURE }, xaxis: index ? "x2" : "x", yaxis: index ? "y2" : "y" } : { type: "histogram", name: item.name, x: item.values, marker: { color: item.name === target ? TARGET : FEATURE }, xaxis: index ? "x2" : "x", yaxis: index ? "y2" : "y" });
-    this.plot("histogram", htraces, { grid: { rows: 1, columns: Math.max(1, hist.length), pattern: "independent" }, xaxis: this.axis(hist[0]?.name || values.x, hist[0]?.name === target ? TARGET : FEATURE), xaxis2: this.axis(hist[1]?.name || values.y, hist[1]?.name === target ? TARGET : FEATURE), yaxis: { title: "Наблюдений", gridcolor: "#2a3a49" }, yaxis2: { title: "Наблюдений", gridcolor: "#2a3a49" }, showlegend: false, bargap: 0.08 });
+    this.plot("histogram", htraces, { grid: { rows: 1, columns: Math.max(1, hist.length), pattern: "independent" }, xaxis: this.axis(hist[0]?.name || values.x, hist[0]?.name === target ? TARGET : FEATURE), xaxis2: this.axis(hist[1]?.name || values.y, hist[1]?.name === target ? TARGET : FEATURE), yaxis: { title: "Наблюдений", gridcolor: "#766f5f" }, yaxis2: { title: "Наблюдений", gridcolor: "#766f5f" }, showlegend: false, bargap: 0.08 });
     const c = payload.correlation || {};
     const names = c.columns || c.features || c.names || c.labels || [];
     const matrix = c.matrix || c.values || c.data || [];
-    if (names.length && matrix.length) this.plot("correlation", [{ type: "heatmap", x: names, y: names, z: matrix, zmin: -1, zmax: 1, zmid: 0, colorscale: [[0, "#6d9fe2"], [0.5, "#202e3b"], [1, TARGET]], colorbar: { title: "r", thickness: 12 }, hovertemplate: "%{x} ↔ %{y}<br>Корреляция: %{z:.3f}<extra></extra>" }], { xaxis: { tickangle: -35, automargin: true }, yaxis: { automargin: true }, margin: { l: 95, r: 55, t: 10, b: 80 } });
+    if (names.length && matrix.length) this.plot("correlation", [{ type: "heatmap", x: names, y: names, z: matrix, zmin: -1, zmax: 1, zmid: 0, colorscale: [[0, FEATURE], [0.5, "#eee9dc"], [1, TARGET]], colorbar: { title: "r", thickness: 12 }, hovertemplate: "%{x} ↔ %{y}<br>Корреляция: %{z:.3f}<extra></extra>" }], { xaxis: { tickangle: -35, automargin: true }, yaxis: { automargin: true }, margin: { l: 95, r: 55, t: 10, b: 80 } });
     else this.plotNode("correlation").innerHTML = '<p class="dw-empty">Для корреляции нужны хотя бы два числовых столбца с непостоянными значениями.</p>';
   }
   async render3D(payload, values) {
@@ -587,7 +612,7 @@ class DatasetWorkspace {
       traces = categories.map((name, j) => make(valid.filter((i) => String(colors[i] ?? "Пропуск") === name), name, CATEGORY_COLORS[j % CATEGORY_COLORS.length]));
     } else {
       const trace = make(valid, values.color || "Наблюдения", numericColor ? valid.map((i) => colors[i]) : FEATURE);
-      if (numericColor && values.color) Object.assign(trace.marker, { colorscale: [[0, "#79b9ef"], [0.5, "#b2d7ca"], [1, TARGET]], showscale: true, colorbar: { title: values.color, thickness: 12 } });
+      if (numericColor && values.color) Object.assign(trace.marker, { colorscale: [[0, FEATURE], [0.5, "#b8af9d"], [1, TARGET]], showscale: true, colorbar: { title: values.color, thickness: 12 } });
       traces = [trace];
     }
     this.plot("scatter3d", traces, { scene: { xaxis: this.axis(x, x === target ? TARGET : FEATURE), yaxis: this.axis(second, second === target ? TARGET : FEATURE), zaxis: this.axis(z, z === target ? TARGET : FEATURE), bgcolor: "transparent", camera: { eye: { x: 1.4, y: 1.5, z: 1 } } }, legend: { orientation: "h", y: -0.12 }, margin: { l: 0, r: numericColor ? 50 : 0, t: 0, b: 25 } });
@@ -643,6 +668,7 @@ class DatasetWorkspace {
     const el = event.target.closest("button,a");
     if (!el || !this.container.contains(el)) return;
     if (el.classList.contains("dw-help")) {
+      if (el.tagName === "A") return;
       event.preventDefault();
       const wrap = el.closest(".dw-help-wrap");
       if (wrap.classList.contains('is-pinned')) this.closeHelp(wrap, true);
@@ -655,6 +681,7 @@ class DatasetWorkspace {
       return;
     }
     if (el.dataset.dwHelp) {
+      if (el.tagName === "A" && el.getAttribute("href")?.startsWith("/lesson")) return;
       event.preventDefault();
       this.closeHelp(el.closest('.dw-help-wrap'));
       this.onHelp(el.dataset.dwHelp);

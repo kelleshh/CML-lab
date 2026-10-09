@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -140,6 +141,35 @@ def test_autoselected_running_port_is_reused_from_manifest(http_service, tmp_pat
     assert launcher.running_instance(options) is None
 
 
+def test_requested_port_does_not_reuse_another_project_or_data_directory(http_service, tmp_path, monkeypatch):
+    port, _ = http_service
+    monkeypatch.setenv('CML_LAB_DATA', str(tmp_path))
+    options = launcher.argument_parser().parse_args(['--port', str(port)])
+    # An identical API on the requested port is insufficient: it may own other datasets.
+    assert launcher.running_instance(options) is None
+
+
+    launcher.instance_file().write_text(json.dumps({
+        'project': str(tmp_path / 'another project'), 'host': options.host,
+        'port': port, 'pid': 10,
+    }))
+    assert launcher.running_instance(options) is None
+    launcher.instance_file().write_text(json.dumps({
+        'project': str(launcher.PROJECT), 'host': options.host, 'port': port, 'pid': 10,
+    }))
+    assert launcher.running_instance(options) == f'http://127.0.0.1:{port}'
+    monkeypatch.setenv('CML_LAB_DATA', str(tmp_path / 'different data directory'))
+    assert launcher.running_instance(options) is None
+
+
+@pytest.mark.parametrize('manifest', ['[]', 'null', '42', '"invalid manifest"'])
+def test_non_object_server_manifest_does_not_prevent_startup(manifest, tmp_path, monkeypatch):
+    monkeypatch.setenv('CML_LAB_DATA', str(tmp_path))
+    launcher.instance_file().write_text(manifest)
+    options = launcher.argument_parser().parse_args(['--port', '0'])
+    assert launcher.running_instance(options) is None
+
+
 def test_browser_waits_for_ready_health(tmp_path, monkeypatch):
     monkeypatch.setenv('LINEAR_LAB_DATA', str(tmp_path))
     events = []
@@ -178,7 +208,7 @@ def test_shell_launchers_preserve_arguments_and_project_directory(tmp_path):
 @pytest.mark.skipif(os.name == 'nt', reason='Сигналы настоящего локального сервера проверяем на POSIX')
 def test_real_server_ready_reuse_and_foreground_shutdown(tmp_path):
     environment = os.environ.copy()
-    environment['LINEAR_LAB_DATA'] = str(tmp_path)
+    environment['CML_LAB_DATA'] = str(tmp_path)
     interpreter = launcher.environment_python(PROJECT)
     if not interpreter.exists():
         interpreter = Path(sys.executable)
@@ -201,6 +231,31 @@ def test_real_server_ready_reuse_and_foreground_shutdown(tmp_path):
         assert second.returncode == 0, second.stdout + second.stderr
         assert 'уже работает' in second.stdout
         assert json.loads(manifest.read_text())['pid'] == process.pid
+        # Another launcher copy may use the same code, but must not recover this server's runs.
+        other_project = tmp_path / 'other project with spaces'
+        other_project.mkdir()
+        shutil.copyfile(PROJECT / 'run.py', other_project / 'run.py')
+        other_environment = environment.copy()
+        other_environment['PYTHONPATH'] = str(PROJECT) + os.pathsep + environment.get('PYTHONPATH', '')
+        other_command = [str(interpreter), str(other_project / 'run.py'), '--system',
+                         '--no-browser', '--port', str(port)]
+        rejected = subprocess.run(other_command, cwd=other_project, env=other_environment,
+                                  capture_output=True, text=True, timeout=20)
+        rejected_output = rejected.stdout + rejected.stderr
+        assert rejected.returncode == 1, rejected_output
+        assert 'Папка данных уже используется' in rejected_output
+        assert 'Traceback' not in rejected_output
+        assert 'Лаборатория уже работает' not in rejected_output
+        assert 'Лаборатория остановлена' not in rejected_output
+        assert json.loads(manifest.read_text()) == running
+        assert launcher.probe_lab('127.0.0.1', port)
+        # Diagnosis remains read-only and must not misidentify this copy as its own server.
+        shutil.copyfile(PROJECT / 'requirements.txt', other_project / 'requirements.txt')
+        diagnosis = subprocess.run(other_command + ['--doctor'], cwd=other_project,
+                                   env=other_environment, capture_output=True, text=True, timeout=20)
+        assert diagnosis.returncode == 0, diagnosis.stdout + diagnosis.stderr
+        assert 'Лаборатория уже работает' not in diagnosis.stdout
+        assert json.loads(manifest.read_text()) == running
         process.send_signal(signal.SIGINT)
         stdout, _ = process.communicate(timeout=15)
         assert process.returncode == 0, stdout
@@ -217,3 +272,92 @@ def test_real_server_ready_reuse_and_foreground_shutdown(tmp_path):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+
+
+def test_cml_data_directory_precedence_and_explicit_legacy_alias(tmp_path, monkeypatch):
+    monkeypatch.delenv('CML_LAB_DATA', raising=False)
+    monkeypatch.delenv('LINEAR_LAB_DATA', raising=False)
+    assert launcher.data_directory() == Path.home() / '.cml-lab'
+    monkeypatch.setenv('LINEAR_LAB_DATA', str(tmp_path / 'legacy'))
+    assert launcher.data_directory() == tmp_path / 'legacy'
+    monkeypatch.setenv('CML_LAB_DATA', str(tmp_path / 'cml'))
+    assert launcher.data_directory() == tmp_path / 'cml'
+    assert launcher.instance_file().parent == tmp_path / 'cml'
+
+
+def test_platform_dependency_markers_select_exactly_one_xgboost_distribution():
+    linux = dict(launcher.direct_dependencies(PROJECT, platform='linux'))
+    windows = dict(launcher.direct_dependencies(PROJECT, platform='win32'))
+    mac = dict(launcher.direct_dependencies(PROJECT, platform='darwin'))
+    assert linux['xgboost-cpu'] == '3.4.1' and 'xgboost' not in linux
+    assert windows['xgboost'] == mac['xgboost'] == '3.4.1'
+    assert 'xgboost-cpu' not in windows and 'xgboost-cpu' not in mac
+    assert all(item['lightgbm'] == '4.7.0' for item in (linux, windows, mac))
+    assert all('linearmodels' not in item for item in (linux, windows, mac))
+
+
+def test_unknown_dependency_marker_is_reported(tmp_path):
+    (tmp_path / 'requirements.txt').write_text('example==1.0; unknown_condition == "x"\n')
+    with pytest.raises(launcher.LauncherError, match='условие зависимости'):
+        launcher.direct_dependencies(tmp_path)
+
+
+def test_launcher_rejects_python_311_before_installation_or_service(monkeypatch, capsys):
+    monkeypatch.setattr(launcher.sys, 'version_info', (3, 11, 9))
+    monkeypatch.setattr(launcher, 'prepare_environment', lambda *args: pytest.fail('Unsupported interpreter must not install dependencies'))
+    monkeypatch.setattr(launcher, 'serve', lambda *args: pytest.fail('Unsupported interpreter must not start server'))
+    assert launcher.main(['--system', '--no-browser']) == 1
+    assert 'Python 3.12' in capsys.readouterr().out
+
+
+def test_posix_start_script_preserves_arguments_in_folder_with_spaces(tmp_path):
+    if os.name == 'nt':
+        pytest.skip('POSIX shell scenario')
+    project = tmp_path / 'CML project & spaces'
+    project.mkdir()
+    (project / 'start.sh').write_bytes((PROJECT / 'start.sh').read_bytes())
+    (project / 'run.py').write_text('placeholder')
+    interpreter = project / '.venv' / 'bin' / 'python'
+    interpreter.parent.mkdir(parents=True)
+    recorded = project / 'arguments.json'
+    interpreter.write_text('#!/bin/sh\nif [ "$1" = "-c" ]; then exit 0; fi\nexec "' + sys.executable + '" -c \'import json,sys; from pathlib import Path; Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:]));\' "' + str(recorded) + '" "$@"\n')
+    interpreter.chmod(0o755)
+    process = subprocess.run(['/bin/sh', str(project / 'start.sh'), '--no-browser', '--port', '9030'], capture_output=True, text=True, timeout=10)
+    assert process.returncode == 0, process.stdout + process.stderr
+    assert json.loads(recorded.read_text()) == [str(project / 'run.py'), '--no-browser', '--port', '9030']
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='Interrupt process groups require POSIX')
+def test_posix_launcher_waits_for_interrupt_cleanup(tmp_path):
+    project = tmp_path / 'CML launch & spaces'
+    project.mkdir()
+    (project / 'start.sh').write_bytes((PROJECT / 'start.sh').read_bytes())
+    interpreter = project / '.venv' / 'bin' / 'python'
+    interpreter.parent.mkdir(parents=True)
+    interpreter.symlink_to(sys.executable)
+    (project / 'run.py').write_text(
+        'from pathlib import Path\nimport signal, time\n'
+        'def stop(signum, frame):\n'
+        '    time.sleep(0.3)\n'
+        '    Path("stopped").write_text("cleanup complete")\n'
+        '    raise SystemExit(0)\n'
+        'signal.signal(signal.SIGINT, stop)\n'
+        'Path("ready").touch()\n'
+        'while True: time.sleep(0.1)\n'
+    )
+    process = subprocess.Popen(['/bin/sh', str(project / 'start.sh')],
+                               cwd=tmp_path, start_new_session=True)
+    try:
+        deadline = time.monotonic() + 10
+        while not (project / 'ready').exists() and time.monotonic() < deadline:
+            if process.poll() is not None:
+                pytest.fail('Launcher exited before the child was ready')
+            time.sleep(0.05)
+        assert (project / 'ready').exists()
+        os.killpg(process.pid, signal.SIGINT)
+        assert process.wait(timeout=5) == 0
+        assert (project / 'stopped').read_text() == 'cleanup complete'
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=5)

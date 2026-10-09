@@ -17,3 +17,10 @@ tqdm==4.67.3
 skops==0.16.0
 skl2onnx==1.20.0
 onnxruntime==1.31.0
+
+# CPU implementation on Linux avoids downloading CUDA runtime packages.
+xgboost-cpu==3.4.1; sys_platform == 'linux'
+xgboost==3.4.1; sys_platform != 'linux'
+lightgbm==4.7.0
+catboost==1.2.10
+imbalanced-learn==0.14.1

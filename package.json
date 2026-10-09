@@ -1,11 +1,11 @@
 {
-  "name": "linear-lab",
-  "version": "2.0.0",
+  "name": "cml-lab",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "check": "node --check web/app.js && node --check web/charts.js"
+    "check": "node --check web/cml-app.js && node --check web/charts.js"
   },
   "devDependencies": {
     "jsdom": "^30.1.2",

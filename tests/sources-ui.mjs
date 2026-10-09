@@ -25,7 +25,7 @@ function setup(api) {
 test('source and library task filters use actual task IDs and unsupported sources remain visible but blocked', async () => {
   const state = setup(async () => ({items: []}));
   try {
-    const validTasks = ['', 'regression', 'classification', 'clustering', 'time_series', 'other'];
+    const validTasks = ['', 'forecasting', 'panel', 'ranking', 'anomaly', 'reduction', 'regression', 'classification', 'clustering', 'time_series', 'other'];
     for (const key of ['library-task', 'source-task']) {
       assert.deepEqual([...state.field(key).options].map(item => item.value), validTasks);
     }

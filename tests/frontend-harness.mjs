@@ -27,7 +27,7 @@ const fixturePath = process.env.LINEAR_LAB_UI_FIXTURE || [
 ].find(existsSync);
 assert.ok(fixturePath, 'A captured API fixture is required in tests/fixtures/qa-fixture.json');
 const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'));
-const dom = new JSDOM(readFileSync(join(root, 'web', 'index.html'), 'utf8'), {
+const dom = new JSDOM(readFileSync(join(root, 'web', 'linear-index.html'), 'utf8'), {
   url: 'http://localhost:8765/',
   pretendToBeVisual: true,
 });

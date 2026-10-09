@@ -28,7 +28,18 @@ MAX_COLUMNS = 1_000
 MAX_CELLS = 5_000_000
 MAX_CATEGORIES = 512
 _ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
-TASK_LABELS = {"regression": "Регрессия: предсказать число", "classification": "Классификация: предсказать класс", "clustering": "Кластеризация: найти группы", "time_series": "Временные ряды: учитывать порядок во времени", "other": "Другая задача / задача ещё не выбрана"}
+TASK_LABELS = {
+    "regression": "Регрессия: предсказать число",
+    "classification": "Классификация: предсказать класс",
+    "clustering": "Кластеризация: найти группы",
+    "ranking": "Ранжирование: упорядочить объекты внутри запроса",
+    "forecasting": "Временные ряды: предсказать будущие значения",
+    "panel": "Панельные ряды: учитывать время и объект",
+    "anomaly": "Аномалии: найти необычные наблюдения",
+    "reduction": "Снижение размерности: сократить число признаков",
+    "time_series": "Временные ряды: учитывать порядок во времени",
+    "other": "Другая задача / задача ещё не выбрана",
+}
 _METADATA_FIELDS = {"name", "description", "tags", "task", "default_target", "task_target"}
 
 
@@ -98,8 +109,9 @@ _GENERATOR_PARAMS = [
 class DataService:
     """Own dataset IDs and never interpret client identifiers as filesystem paths."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, allow_categorical_only: bool = False):
         self.root = Path(root)
+        self.allow_categorical_only = allow_categorical_only
         self.root.mkdir(parents=True, exist_ok=True)
 
     def catalogue(self) -> list[dict[str, Any]]:
@@ -150,7 +162,19 @@ class DataService:
             target = spec.get("target")
             if target is not None and target not in frame.columns:
                 raise ValueError("Указанная цель отсутствует в отредактированных данных.")
-            return self._store(frame, spec.get("name", "Отредактированные данные"), target, {"source": "custom", "description": "Строки введены или изменены вручную."})
+            details = spec.get("metadata", {})
+            if not isinstance(details, dict):
+                raise ValueError("Описание пользовательского набора должно быть объектом.")
+            allowed = {"task", "tasks", "task_target", "description", "tags", "generator", "params", "roles", "excluded_features", "excluded_targets", "source", "warnings"}
+            if set(details) - allowed:
+                raise ValueError("В описании пользовательского набора есть неизвестные поля.")
+            if not isinstance(details.get("task", "other"), str) or details.get("task", "other") not in TASK_LABELS:
+                raise ValueError("Неизвестная задача машинного обучения.")
+            if "tasks" in details and (not isinstance(details["tasks"], list) or not details["tasks"] or any(not isinstance(task, str) or task not in TASK_LABELS for task in details["tasks"])):
+                raise ValueError("Задачи набора должны быть непустым списком известных задач.")
+            if details.get("task_target") is not None and details["task_target"] not in frame.columns:
+                raise ValueError("Целевой столбец задачи отсутствует в наборе.")
+            return self._store(frame, spec.get("name", "Отредактированные данные"), target, {"source": "custom", "description": "Строки введены или изменены вручную.", **details})
         if kind == "synthetic" and name in _SYNTHETIC:
             frame, metadata = self._synthetic(name, params)
             return self._store(frame, _SYNTHETIC[name][0], "y", metadata)
@@ -228,7 +252,8 @@ class DataService:
                 metadata = self.describe(dataset_id)
             if metadata.get("loader") == "fetch_openml":
                 metadata["source"] = "openml"
-            if task and task not in metadata.get("tasks", [metadata.get("task")]):
+            dataset_tasks = metadata.get("tasks", [metadata.get("task")])
+            if task and task not in dataset_tasks and not (task == "forecasting" and "time_series" in dataset_tasks):
                 continue
             if source and metadata.get("source") != source:
                 continue
@@ -288,6 +313,16 @@ class DataService:
         """Export original values, including categorical columns and missing cells."""
         frame, _ = self._read(dataset_id)
         return frame.to_csv(index=False, lineterminator="\n").encode("utf-8-sig")
+
+    def read_frame(self, dataset_id: str) -> pd.DataFrame:
+        """Read one original snapshot without coercing a classification target.
+
+        Adapters use this public boundary instead of reaching into storage or
+        reconstructing a full table through paginated rows or CSV type inference.
+        A fresh copy prevents a fitted transformer from changing saved data.
+        """
+        frame, _ = self._read(dataset_id)
+        return frame.copy(deep=True)
 
     def read_column(self, dataset_id: str, column: str) -> pd.Series:
         """Read an original column without requiring it to be a model feature."""
@@ -525,7 +560,7 @@ class DataService:
         frame = self._validate_frame(frame)
         excluded_targets = set(details.get("excluded_targets", []))
         targets = [column for column in frame.columns if self._numeric(frame[column]) and column not in excluded_targets]
-        if not targets:
+        if not targets and not self.allow_categorical_only:
             raise ValueError("В таблице нет числовых колонок для целевой переменной регрессии.")
         if default_target is not None and default_target not in targets:
             raise ValueError("Указанная целевая колонка не является числовой.")
@@ -566,7 +601,7 @@ class DataService:
     @staticmethod
     def _validate_frame(frame: pd.DataFrame) -> pd.DataFrame:
         if not isinstance(frame, pd.DataFrame) or len(frame) < 3 or len(frame.columns) < 2:
-            raise ValueError("Нужны минимум три строки и две колонки: признаки и числовая цель.")
+            raise ValueError("Нужны минимум три строки и две колонки.")
         if len(frame) > MAX_ROWS or len(frame.columns) > MAX_COLUMNS or frame.size > MAX_CELLS:
             raise ValueError("Таблица превышает лимиты: 100 000 строк, 1000 колонок, 5 млн ячеек.")
         frame = frame.copy().reset_index(drop=True)
