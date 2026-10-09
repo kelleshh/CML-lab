@@ -141,7 +141,16 @@ def test_holdout_answers_do_not_change_fit_regularization_path_or_cross_validati
     np.testing.assert_allclose(original["coefficients"], altered["coefficients"], atol=1e-12)
     assert original["intercept"] == pytest.approx(altered["intercept"], abs=1e-12)
     assert original["regularization_path"] == altered["regularization_path"]
-    assert original["cv"] == altered["cv"]
+    # Fold durations describe real work and naturally differ between runs. All
+    # scores, selected rows and sampling diagnostics must remain identical.
+    def without_fold_durations(value):
+        return {
+            **value,
+            "folds": [{key: item for key, item in fold.items() if key != "seconds"}
+                      for fold in value["folds"]],
+        }
+
+    assert without_fold_durations(original["cv"]) == without_fold_durations(altered["cv"])
     assert altered["metrics"]["test"]["mse"] > original["metrics"]["test"]["mse"] + 1e7
 
 

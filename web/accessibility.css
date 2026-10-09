@@ -1,0 +1,152 @@
+/* Readability and keyboard access shared by the independently rendered panels.
+   Load after the component styles. Native Plotly/KaTeX controls stay untouched. */
+:where(button, a, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--accent, #66e4bc);
+  outline-offset: 3px;
+}
+:where(button, input, select, textarea, a) {
+  scroll-margin-block: 110px 24px;
+}
+.control-panel, .dataset-workspace, .pw-workspace, .validation-workspace {
+  min-width: 0;
+}
+.control-panel :is(label, summary, select, input:not([type=range]):not([type=checkbox]), textarea),
+.dataset-workspace :is(label, select, input, textarea),
+.pw-workspace :is(label, summary, select, input, textarea),
+.validation-workspace :is(label, summary, select, input, textarea),
+.validation-workspace .vw-param :is(label, select, input:not([type=checkbox])) {
+  font-size: max(14px, .875rem);
+}
+.help-text, .help-popover, .help-popover .help-note,
+.beginner-note, .beginner-value, .beginner-option, .beginner-custom,
+.dw-note, .dw-muted, .dw-card-description, .dw-card-target,
+.dw-explore-description, .dw-explore-state, .dw-role-legend,
+.dw-explorer-controls label, .dw-explorer-controls select,
+.dw-dataset-card footer .dw-button, .dw-source-card footer .dw-button,
+.dw-explorer-actions .dw-button, .dw-help-pop, .dw-help-pop > a,
+.pw-note, .pw-status, .pw-warning, .pw-preset-note, .pw-intro p,
+.pw-preview-stats span, .pw-preview-controls select,
+.vw-note, .vw-param-help, .vw-budget, .vw-live, .vw-param-chip,
+.vw-metric-reason, .vw-split-details, .vw-winner, .vw-quick button {
+  font-size: max(14px, .875rem);
+}
+.dw-help-pop {
+  max-height: min(65vh, 540px);
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding-right: 42px;
+}
+.dataset-workspace .dw-help-pop[hidden] { display: none !important; }
+.dataset-workspace .dw-help-pop:not([hidden]) { display: block; }
+.dw-help-close {
+  position: absolute;
+  inset-block-start: 7px;
+  inset-inline-end: 7px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+}
+.dw-help-close:hover { background: var(--panel2, #16242d); }
+.help-links a, .dw-help-pop > a {
+  text-decoration: underline;
+  text-underline-offset: .2em;
+}
+.help-popover, .dw-help-pop { overscroll-behavior: contain; }
+.pw-preview, dialog { overflow: auto; overscroll-behavior: contain; }
+.dw-table-scroll, .pw-table-scroll, .data-editor { overscroll-behavior-inline: contain; }
+
+/* All role labels include words in addition to colour. These dark-theme colours
+   meet a 4.5:1 text contrast ratio against both panel backgrounds. */
+.feature-label, .dw-feature, .pw-feature { color: var(--accent, #66e4bc); }
+.target-label, .dw-target, .pw-target { color: var(--coral, #f99b83); }
+body[data-theme=light] .feature-label,
+body[data-theme=light] .dw-feature,
+body[data-theme=light] .pw-feature { color: #076950 !important; }
+body[data-theme=light] .target-label,
+body[data-theme=light] .dw-target,
+body[data-theme=light] .pw-target { color: #a63d2a !important; }
+
+@media (pointer: coarse) {
+  .help-trigger, .help-close, .dw-help, .dw-help-close,
+  .icon-button, .button, .dw-button, .nav, .chart-tab,
+  .dw-tablist button, .beginner-option, .parameter-mode button,
+  .control-panel .text-button, .pw-actions .text-button, .vw-quick button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .help-trigger, .help-close, .dw-help, .dw-help-close, .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+  .control-panel .check, .pw-checkbox label {
+    min-height: 44px;
+    align-items: center;
+  }
+  .control-panel input[type=range], .playback input[type=range] { min-height: 44px; }
+  .control-panel summary, .dataset-workspace summary, .pw-workspace summary {
+    min-height: 44px;
+    padding-block: 10px;
+  }
+  .dw-help-pop { padding-right: 60px; }
+  .help-popover h3 { margin-right: 44px; }
+}
+
+@media (max-width: 480px) {
+  .workspace, .learning-layout, .workspace-header { padding-inline: 12px; }
+  .topbar { padding-inline: 12px; }
+  .control-section { padding-inline: 15px; }
+  .section-title { flex-wrap: wrap; }
+  .header-actions { flex-wrap: wrap; }
+  .header-actions select { flex: 1; min-width: 155px; }
+  .chart-tabs, .primary-nav, .dw-tablist { max-width: 100%; }
+  .playback { flex-wrap: wrap; }
+  .playback input[type=range] { flex-basis: calc(100% - 150px); }
+  .playback #frame-label { width: auto; flex: 1; overflow-wrap: anywhere; }
+  .dw-toolbar, .dw-two, .dw-four, .dw-metadata-grid { grid-template-columns: minmax(0, 1fr); }
+  .dw-library-grid, .dw-source-cards { grid-template-columns: minmax(0, 1fr); }
+  .dw-explorer-controls { grid-template-columns: minmax(0, 1fr); }
+  .dw-dataset-card footer, .dw-source-card footer, .dw-metadata-footer { flex-wrap: wrap; }
+  .dataset-workspace .dw-help-pop {
+    position: fixed;
+    inset-inline: 12px !important;
+    inset-block-start: auto;
+    inset-block-end: 12px;
+    width: auto;
+    max-height: 65vh;
+    z-index: 1200;
+  }
+  .dw-help-pop::before { display: none; }
+  .pw-preview { padding: 14px; max-height: 94vh; }
+  .pw-preview-header { gap: 10px; align-items: flex-start; }
+  .pw-preview-controls, .pw-preview-axes, .pw-pair { grid-template-columns: minmax(0, 1fr); }
+  .pw-preview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .control-panel select, .control-panel input:not([type=checkbox]):not([type=range]),
+  .dataset-workspace select, .dataset-workspace input, .dataset-workspace textarea,
+  .pw-workspace select, .pw-workspace input,
+  .validation-workspace select, .validation-workspace input,
+  .validation-workspace .vw-param input:not([type=checkbox]),
+  .validation-workspace .vw-param select {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .feature-label, .target-label, .dw-feature, .dw-target,
+  .pw-feature, .pw-target { color: CanvasText !important; }
+  .help-trigger, .dw-help, .beginner-option[aria-pressed=true] { border-color: ButtonText; }
+}

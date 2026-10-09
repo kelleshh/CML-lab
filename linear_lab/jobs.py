@@ -20,14 +20,21 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def _train_worker(root: str, request: dict, channel: Any) -> None:
-    os.environ.setdefault('OMP_NUM_THREADS', '2')
-    os.environ.setdefault('OPENBLAS_NUM_THREADS', '2')
+    os.environ.setdefault('OMP_NUM_THREADS', '1')
+    os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
     from .datasets import DataService
     from .models import ModelRegistry
     from .training import TrainingService
     try:
-        service = TrainingService(DataService(Path(root) / 'datasets'), ModelRegistry())
-        result = service.run(request, channel.put, lambda: False)
+        from threadpoolctl import threadpool_limits
+        data, registry = DataService(Path(root) / 'datasets'), ModelRegistry()
+        if request.get('search'):
+            from .search import SearchService
+            service = SearchService(data, registry)
+        else:
+            service = TrainingService(data, registry)
+        with threadpool_limits(limits=1):
+            result = service.run(request, channel.put, lambda: False)
         channel.put({'type': 'result', 'result': result})
     except Exception as exc:
         channel.put({'type': 'error', 'error': str(exc) or type(exc).__name__})
@@ -57,6 +64,7 @@ class JobManager:
             request = dict(request, artifact_path=str(job_directory / 'model.joblib'))
             write_json(job_directory / 'request.json', request)
             state = {'id': identifier, 'status': 'running', 'progress': 0, 'message': 'Подготовка данных', 'events': [], 'created': time.time()}
+            write_json(job_directory / 'state.json', state)
             self._jobs[identifier] = state
             channel = self._context.Queue()
             process = self._context.Process(target=_train_worker, args=(str(self.root), request, channel), daemon=True)

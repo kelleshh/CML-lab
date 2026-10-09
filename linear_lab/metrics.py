@@ -18,8 +18,11 @@ def evaluate_expression(expression: str, actual, predicted) -> float:
     """Interpret a bounded arithmetic AST; never execute user supplied Python."""
     if not isinstance(expression, str) or not expression.strip() or len(expression) > 1200:
         raise MetricExpressionError("Формула должна содержать от 1 до 1200 символов.")
-    actual = np.asarray(actual, dtype=float).reshape(-1)
-    predicted = np.asarray(predicted, dtype=float).reshape(-1)
+    try:
+        actual = np.asarray(actual, dtype=float).reshape(-1)
+        predicted = np.asarray(predicted, dtype=float).reshape(-1)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise MetricExpressionError('Передай числовые массивы actual и predicted без объектов и текста.') from exc
     if actual.size != predicted.size or actual.size == 0:
         raise MetricExpressionError("Нужны непустые массивы actual и predicted одинаковой длины.")
     if not np.all(np.isfinite(actual)) or not np.all(np.isfinite(predicted)):

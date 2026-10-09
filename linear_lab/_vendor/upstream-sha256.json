@@ -1,0 +1,18 @@
+{
+  "smogn/smoter.py": {
+    "sha256": "16e3f3ba51e852077b6645e95662ce7a22f01af9ad89bdb0fa109f4173370061",
+    "version": "0.1.2"
+  },
+  "smogn/over_sampling.py": {
+    "sha256": "b82bba498288b18d26b2c00b7664428917b31ffb2664c68a2387fa2678d902e9",
+    "version": "0.1.2"
+  },
+  "ImbalancedLearningRegression/smote.py": {
+    "sha256": "4b940d6d891e0e3c5f7c57d41fc4faf399b7cb189f377086edbbb70629bc6876",
+    "version": "0.0.2"
+  },
+  "ImbalancedLearningRegression/over_sampling_smote.py": {
+    "sha256": "d674ef3b007e7114b39677df40b4e4ea55204cd8ba788f0a780e37dc01fdba74",
+    "version": "0.0.2"
+  }
+}

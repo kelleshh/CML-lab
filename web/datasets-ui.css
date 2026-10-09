@@ -1,0 +1,935 @@
+.dataset-workspace {
+  --dw-feature:#66e4bc;
+  --dw-target:#ff927e;
+  --dw-text:var(--text,#dbe7ef);
+  --dw-muted:var(--muted,#8ea3b5);
+  --dw-line:var(--border,#2c3e50);
+  --dw-panel:var(--panel,#13202d);
+  --dw-input:var(--bg,#0c1621);
+  font-size: 15px;
+  color: var(--dw-text);
+  line-height: 1.55;
+}
+.dataset-workspace * {
+  box-sizing: border-box;
+}
+.dataset-workspace [hidden] {
+  display: none !important;
+}
+.dataset-workspace h2,
+.dataset-workspace h3,
+.dataset-workspace h4 {
+  margin: 0;
+  font-weight: 650;
+  letter-spacing: -.02em;
+}
+.dataset-workspace h2 {
+  font-size: 26px;
+}
+.dataset-workspace h3 {
+  font-size: 18px;
+}
+.dataset-workspace p {
+  margin: 8px 0;
+  color: var(--dw-muted);
+}
+.dataset-workspace label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dw-text);
+}
+.dataset-workspace label input,
+.dataset-workspace label select,
+.dataset-workspace label textarea {
+  flex-basis: 100%;
+  width: 100%;
+  margin-top: 3px;
+  min-height: 42px;
+  color: var(--dw-text);
+  background: var(--dw-input);
+  border: 1px solid var(--dw-line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font: inherit;
+  font-weight: 400;
+}
+.dataset-workspace input::placeholder,
+.dataset-workspace textarea::placeholder {
+  color: var(--dw-muted);
+  opacity: .85;
+}
+.dataset-workspace textarea {
+  resize: vertical;
+  min-height: 78px;
+}
+.dataset-workspace input:focus-visible,
+.dataset-workspace select:focus-visible,
+.dataset-workspace textarea:focus-visible,
+.dataset-workspace button:focus-visible,
+.dataset-workspace a:focus-visible {
+  outline: 2px solid var(--dw-feature);
+  outline-offset: 3px;
+}
+.dataset-workspace select {
+  color-scheme: dark;
+}
+.dataset-workspace input[type=file] {
+  padding: 8px;
+  cursor: pointer;
+}
+.dataset-workspace input[type=file]::file-selector-button {
+  padding: 7px 12px;
+  margin-right: 12px;
+  border: 0;
+  border-radius: 6px;
+  background: #224637;
+  color: #baf5df;
+  cursor: pointer;
+  font: inherit;
+}
+.dw-feature {
+  color: var(--dw-feature) !important;
+}
+.dw-target {
+  color: var(--dw-target) !important;
+}
+.dw-muted {
+  color: var(--dw-muted);
+  font-size: 12px;
+}
+.dw-note {
+  font-size: 13px;
+}
+.dw-header,
+.dw-explorer-header {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 22px 0 18px;
+}
+.dw-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.dw-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  border: 1px solid var(--dw-line);
+  border-radius: 8px;
+  padding: 9px 15px;
+  background: transparent;
+  color: var(--dw-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background .16s,
+    border-color .16s,
+    transform .16s;
+}
+.dw-button:hover {
+  background: #ffffff0c;
+  border-color: #65778b;
+}
+.dw-button:active {
+  transform: translateY(1px);
+}
+.dw-button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+  transform: none;
+}
+.dw-button.dw-primary {
+  background: var(--dw-feature);
+  color: #10251e;
+  border-color: var(--dw-feature);
+}
+.dw-button.dw-primary:hover {
+  background: #93edcf;
+}
+.dw-button.dw-danger {
+  color: var(--dw-target);
+  border-color: #704541;
+}
+.dw-button.dw-danger:hover {
+  background: #ff927e13;
+}
+.dw-tablist {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--dw-line);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+.dw-tablist button {
+  border: 0;
+  border-bottom: 3px solid transparent;
+  padding: 12px 18px;
+  white-space: nowrap;
+  font: inherit;
+  color: var(--dw-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.dw-tablist button[aria-selected=true] {
+  color: var(--dw-feature);
+  border-bottom-color: var(--dw-feature);
+  font-weight: 600;
+}
+.dw-tablist button:hover {
+  color: var(--dw-text);
+}
+.dw-status:empty {
+  display: none;
+}
+.dw-status {
+  padding: 12px 15px;
+  border: 1px solid #315443;
+  background: #1d44331a;
+  border-radius: 9px;
+  margin: 15px 0;
+  font-size: 14px;
+}
+.dw-status.is-error,
+.dw-explore-state.is-error {
+  border-color: #895244;
+  color: var(--dw-target);
+  background: #ff927e0b;
+}
+.dw-toolbar {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(130px, 1fr));
+  gap: 13px;
+  align-items: end;
+  margin: 16px 0;
+}
+.dw-library-summary {
+  font-size: 13px;
+  color: var(--dw-muted);
+  margin: 12px 0;
+}
+.dw-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(295px, 1fr));
+  gap: 15px;
+}
+.dw-dataset-card,
+.dw-source-card {
+  border: 1px solid var(--dw-line);
+  border-radius: 12px;
+  background: var(--dw-panel);
+  padding: 17px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dw-dataset-card.is-selected {
+  border-color: #66e4bc9c;
+  box-shadow: inset 0 0 0 1px #66e4bc20;
+}
+.dw-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  min-height: 24px;
+}
+.dw-task-chip {
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 3px 7px;
+  background: #95afd411;
+  color: var(--dw-muted);
+}
+.dw-selected-label {
+  font-size: 11px;
+  color: var(--dw-feature);
+  font-weight: 650;
+}
+.dw-dataset-card h3 {
+  overflow-wrap: anywhere;
+}
+.dw-card-description {
+  font-size: 13px;
+  min-height: 39px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dw-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 13px 0;
+}
+.dw-card-stats div {
+  padding: 8px 0;
+}
+.dw-card-stats dt {
+  color: var(--dw-muted);
+  font-size: 11px;
+}
+.dw-card-stats dd {
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+  margin: 1px 0;
+  font-weight: 600;
+}
+.dw-card-target {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 10px;
+  margin: 9px 0;
+}
+.dw-card-tags span {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--dw-line);
+  color: var(--dw-muted);
+}
+.dw-dataset-card footer,
+.dw-source-card footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--dw-line);
+}
+.dw-dataset-card footer > span,
+.dw-source-card footer > span {
+  font-size: 11px;
+  color: var(--dw-muted);
+}
+.dw-dataset-card footer .dw-button {
+  font-size: 12px;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+.dw-empty {
+  grid-column: 1/-1;
+  border: 1px dashed var(--dw-line);
+  border-radius: 12px;
+  padding: 35px 25px;
+  text-align: center;
+  color: var(--dw-muted);
+}
+.dw-empty h3 {
+  color: var(--dw-text);
+  margin-bottom: 8px;
+}
+.dw-empty .dw-button {
+  margin: 10px 5px 0;
+}
+.dw-creation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 26px;
+  background: var(--dw-panel);
+  border: 1px solid var(--dw-line);
+  padding: 22px;
+  border-radius: 12px;
+}
+.dw-creation-grid h3 {
+  margin-bottom: 15px;
+}
+.dw-creation-grid label {
+  margin-bottom: 13px;
+}
+.dw-scenario-description {
+  font-size: 15px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--dw-feature);
+  background: #66e4bc07;
+  margin: 15px 0 20px !important;
+  color: var(--dw-text) !important;
+}
+.dw-generator-note {
+  font-size: 13px;
+}
+.dw-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.dw-four {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.dw-advanced,
+.dw-preview,
+.dw-metadata {
+  border: 1px solid var(--dw-line);
+  padding: 13px 17px;
+  border-radius: 10px;
+  margin-top: 15px;
+  background: var(--dw-panel);
+}
+.dataset-workspace summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 550;
+}
+.dw-advanced[open] summary,
+.dw-preview[open] summary,
+.dw-metadata[open] summary {
+  margin-bottom: 13px;
+}
+.dw-advanced p,
+.dw-metadata p {
+  font-size: 13px;
+}
+.dw-create-footer {
+  display: flex;
+  align-items: end;
+  gap: 18px;
+  justify-content: space-between;
+  margin: 18px 0;
+}
+.dw-create-footer > label {
+  width: 205px;
+}
+.dw-create-footer .dw-primary {
+  min-height: 44px;
+}
+.dw-import-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.dw-import-card {
+  padding: 20px;
+  border: 1px solid var(--dw-line);
+  background: var(--dw-panel);
+  border-radius: 12px;
+}
+.dw-import-card p {
+  font-size: 14px;
+  min-height: 42px;
+  margin-bottom: 16px;
+}
+.dw-import-card .dw-button {
+  margin-top: 14px;
+}
+.dw-source-group {
+  margin: 25px 0;
+}
+.dw-source-group > h3 {
+  font-size: 16px;
+  margin-bottom: 13px;
+}
+.dw-source-group > h3 span {
+  font-size: 12px;
+  color: var(--dw-muted);
+  font-weight: 400;
+  margin-left: 10px;
+}
+.dw-source-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 14px;
+}
+.dw-source-card .dw-card-top {
+  margin-bottom: 9px;
+}
+.dw-source-card code {
+  font-size: 11px;
+  color: var(--dw-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dw-source-card h4 {
+  font-size: 17px;
+}
+.dw-source-card > p {
+  font-size: 13px;
+  margin-bottom: 15px;
+}
+.dw-support {
+  font-size: 10px;
+  color: var(--dw-feature);
+  border: 1px solid #315443;
+  padding: 2px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.dw-support.is-unavailable {
+  color: var(--dw-muted);
+  border-color: var(--dw-line);
+}
+.dw-source-card footer .dw-button {
+  font-size: 12px;
+  padding: 7px 11px;
+  min-height: 34px;
+}
+.dw-explorer {
+  margin-top: 32px;
+  padding-top: 25px;
+  border-top: 1px solid var(--dw-line);
+  scroll-margin-top: 90px;
+}
+.dw-eyebrow {
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--dw-feature);
+  margin-bottom: 8px;
+}
+.dw-explorer-header {
+  align-items: flex-start;
+}
+.dw-explorer-header h2 {
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+.dw-explorer-header p {
+  font-size: 13px;
+}
+.dw-explorer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  max-width: 440px;
+}
+.dw-explorer-actions .dw-button {
+  font-size: 12px;
+  min-height: 37px;
+  padding: 8px 11px;
+}
+.dw-role-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  font-size: 13px;
+  color: var(--dw-muted);
+  margin: 18px 0;
+}
+.dw-role-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dw-role-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 3px;
+}
+.dw-explorer-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 13px;
+  padding: 17px;
+  border: 1px solid var(--dw-line);
+  background: var(--dw-panel);
+  border-radius: 12px;
+}
+.dw-explorer-controls label {
+  font-size: 12px;
+}
+.dw-explorer-controls select {
+  font-size: 13px;
+}
+.dw-explorer-controls select.dw-axis-target {
+  border-left: 3px solid var(--dw-target);
+}
+.dw-explorer-controls select.dw-axis-feature {
+  border-left: 3px solid var(--dw-feature);
+}
+.dw-explore-description {
+  font-size: 13px;
+  margin: 13px 0 !important;
+}
+.dw-explore-state {
+  font-size: 12px;
+  color: var(--dw-muted);
+  min-height: 23px;
+  margin: 10px 0;
+}
+.dw-raw-plots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+.dw-raw-plots > article {
+  border: 1px solid var(--dw-line);
+  border-radius: 12px;
+  background: var(--dw-panel);
+  overflow: visible;
+  min-width: 0;
+}
+.dw-plot-heading {
+  padding: 15px 17px 0;
+  display: flex;
+  gap: 6px;
+  flex-direction: column;
+}
+.dw-plot-heading h3 {
+  font-size: 15px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dw-plot-heading > span {
+  font-size: 11px;
+  color: var(--dw-muted);
+}
+.dw-plot {
+  height: 365px;
+  min-width: 0;
+  position: relative;
+}
+.dw-plot .dw-empty {
+  margin: 25px;
+  border: 0;
+  padding: 30px 20px;
+  text-align: left;
+  font-size: 13px;
+}
+.dw-profile {
+  margin: 24px 0 12px;
+}
+.dw-profile-heading {
+  margin-bottom: 12px;
+}
+.dw-profile-heading h3 {
+  font-size: 18px;
+}
+.dw-profile-heading p {
+  font-size: 13px;
+}
+.dw-table-scroll {
+  overflow: auto;
+  max-height: 440px;
+  border: 1px solid var(--dw-line);
+  border-radius: 8px;
+}
+.dataset-workspace table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.dataset-workspace caption {
+  text-align: left;
+  padding: 11px 12px;
+  font-size: 12px;
+  color: var(--dw-muted);
+}
+.dataset-workspace th,
+.dataset-workspace td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dw-line);
+  white-space: nowrap;
+}
+.dataset-workspace thead th {
+  position: sticky;
+  top: 0;
+  background: var(--dw-panel);
+  z-index: 1;
+  font-weight: 550;
+}
+.dataset-workspace tbody th {
+  font-weight: 500;
+}
+.dataset-workspace tbody tr:hover {
+  background: #ffffff04;
+}
+.dw-missing {
+  color: var(--dw-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+.dw-metadata-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+.dw-metadata-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 15px;
+}
+.dw-delete-confirm {
+  border: 1px solid #895244;
+  background: #ff927e07;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+.dw-delete-confirm .dw-button {
+  font-size: 12px;
+  margin-right: 7px;
+}
+.dw-help-wrap {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  vertical-align: middle;
+  font-weight: 400;
+  line-height: 1.45;
+}
+.dw-help {
+  width: 21px;
+  height: 21px;
+  min-height: 0;
+  border-radius: 50%;
+  border: 1px solid #627786;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--dw-muted);
+  cursor: help;
+  font-family: inherit;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: 600;
+}
+.dw-help:hover,
+.dw-help:focus {
+  border-color: var(--dw-feature);
+  color: var(--dw-feature);
+}
+.dw-help-pop {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -25px;
+  z-index: 30;
+  width: min(335px, 80vw);
+  background: #172838;
+  border: 1px solid #466075;
+  color: #d7e7f0;
+  padding: 15px 17px;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px #0006;
+  font-size: 13px;
+  text-align: left;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+.dw-help-pop:before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  height: 12px;
+  left: 0;
+  width: 100%;
+}
+.dw-help-pop strong {
+  display: block;
+  font-size: 14px;
+  color: #eff6fa;
+  margin-bottom: 8px;
+}
+.dw-help-pop > span {
+  display: block;
+}
+.dw-help-pop > a {
+  display: block;
+  margin-top: 11px;
+  color: #8ae8c5;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 12px;
+}
+.dw-help-wrap:hover .dw-help-pop,
+.dw-help-wrap:focus-within .dw-help-pop,
+.dw-help-wrap.is-open .dw-help-pop {
+  display: block;
+}
+.dw-explorer-controls label:nth-child(4n) .dw-help-pop {
+  left: auto;
+  right: -15px;
+}
+body[data-theme=light] .dataset-workspace {
+  --dw-text:#253b48;
+  --dw-muted:#617784;
+  --dw-line:#d7e3e9;
+  --dw-panel:#f7fafb;
+  --dw-input:#fff;
+  --dw-feature:#137a5b;
+  --dw-target:#b34b38;
+}
+body[data-theme=light] .dataset-workspace select {
+  color-scheme: light;
+}
+body[data-theme=light] .dw-primary {
+  color: #fff;
+  background: #197f60;
+  border-color: #197f60;
+}
+body[data-theme=light] .dw-primary:hover {
+  background: #12674d;
+}
+body[data-theme=light] .dw-task-chip {
+  background: #e5edf2;
+}
+body[data-theme=light] .dw-help-pop {
+  background: #fff;
+  border-color: #adc3d0;
+  color: #304958;
+  box-shadow: 0 10px 30px #263d4c22;
+}
+body[data-theme=light] .dw-help-pop strong {
+  color: #173746;
+}
+body[data-theme=light] .dw-help-pop > a {
+  color: #116e50;
+}
+body[data-theme=light] .dw-axis-target {
+  border-left-color: #b34b38 !important;
+}
+body[data-theme=light] .dw-axis-feature {
+  border-left-color: #137a5b !important;
+}
+@media (min-width: 1600px) {
+  .dw-explorer-controls {
+    grid-template-columns: repeat(7, minmax(125px, 1fr));
+  }
+  .dw-plot {
+    height: 410px;
+  }
+}
+@media (max-width: 950px) {
+  .dw-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dw-explorer-header {
+    flex-direction: column;
+  }
+  .dw-explorer-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+  .dw-explorer-controls {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+  .dw-four {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dw-plot {
+    height: 330px;
+  }
+  .dw-help-pop {
+    left: -75px;
+  }
+  .dw-explorer-controls label:nth-child(3n) .dw-help-pop {
+    left: auto;
+    right: -15px;
+  }
+}
+@media (max-width: 680px) {
+  .dw-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .dataset-workspace h2 {
+    font-size: 23px;
+  }
+  .dw-tablist button {
+    font-size: 13px;
+    padding: 11px 12px;
+  }
+  .dw-toolbar {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .dw-toolbar .dw-search {
+    grid-column: 1/-1;
+  }
+  .dw-creation-grid,
+  .dw-import-grid,
+  .dw-raw-plots {
+    grid-template-columns: 1fr;
+  }
+  .dw-creation-grid {
+    gap: 15px;
+    padding: 16px;
+  }
+  .dw-explorer-controls {
+    grid-template-columns: 1fr 1fr;
+    padding: 13px;
+    gap: 12px;
+  }
+  .dw-explorer-controls label:nth-child(2n) .dw-help-pop {
+    left: auto;
+    right: -10px;
+  }
+  .dw-four,
+  .dw-metadata-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .dw-metadata-grid > label:nth-child(3) {
+    grid-column: 1/-1;
+  }
+  .dw-create-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .dw-create-footer > label {
+    width: 100%;
+  }
+  .dw-explorer {
+    margin-top: 24px;
+  }
+  .dw-role-legend {
+    gap: 8px;
+    font-size: 12px;
+  }
+  .dw-plot {
+    height: 340px;
+  }
+  .dw-help-pop {
+    left: -50px;
+    width: min(305px, 80vw);
+  }
+  .dw-dataset-card footer .dw-button {
+    font-size: 12px;
+  }
+  .dw-metadata-footer {
+    align-items: flex-start;
+  }
+  .dw-button {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dw-button {
+    transition: none;
+  }
+  .dw-button:active {
+    transform: none;
+  }
+}

@@ -1,0 +1,7 @@
+/* Shared semantics and composed workspaces. */
+.target-label{color:var(--coral,#ff927e)}.feature-label{color:var(--mint,#66e4bc)}
+body[data-theme="light"] .target-label{color:#a63d2a}body[data-theme="light"] .feature-label{color:#076950}
+#model-presets{margin:12px 0}#model-params[hidden],.legacy-data[hidden],.legacy-preprocessing[hidden]{display:none!important}
+.lesson-sources{margin-top:28px;border-top:1px solid var(--line,#273740);padding-top:18px}
+.lesson-sources ul{padding-left:22px;line-height:1.8}.lesson-content p{max-width:78ch;line-height:1.75}
+#preprocessing-workspace,#validation-workspace{margin-top:14px}.parameter-hint{font-size:.85rem;line-height:1.5}

@@ -10,3 +10,10 @@ openpyxl==3.1.5
 joblib==1.5.3
 skglm==0.5
 cvxpy==1.9.3
+optuna==5.0.0
+ImbalancedLearningRegression==0.0.2
+smogn==0.1.2
+tqdm==4.67.3
+skops==0.16.0
+skl2onnx==1.20.0
+onnxruntime==1.31.0

@@ -90,32 +90,28 @@ class TrainingService:
 
     @staticmethod
     def _preprocessor(X, config):
-        numeric = X.select_dtypes(include=[np.number]).columns.tolist()
-        categorical = [name for name in X.columns if name not in numeric]
-        degree = config.get("degree", 1)
-        if isinstance(degree, bool) or int(degree) != degree or not 1 <= int(degree) <= 5:
-            raise ValueError("Степень полинома должна быть целым числом от 1 до 5.")
-        degree = int(degree)
-        if numeric and math.comb(len(numeric) + degree, degree) - 1 > 2000:
-            raise ValueError("Полиномиальное расширение создаст более 2000 признаков. Уменьши степень или число исходных признаков.")
-        transformers = []
-        if numeric:
-            steps = []
-            if config.get("impute", True):
-                steps.append(("impute", SimpleImputer(strategy="median", keep_empty_features=True)))
-            steps.append(("polynomial", PolynomialFeatures(degree=degree, include_bias=False)))
-            if config.get("scale", True):
-                steps.append(("scale", StandardScaler()))
-            transformers.append(("numeric", Pipeline(steps), numeric))
-        if categorical:
-            steps = [("stringify", FunctionTransformer(_string_categories, feature_names_out="one-to-one"))]
-            if config.get("impute", True):
-                steps.append(("impute", SimpleImputer(strategy="most_frequent", keep_empty_features=True)))
-            steps.append(("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)))
-            transformers.append(("categorical", Pipeline(steps), categorical))
-        if not transformers:
-            raise ValueError("Не выбраны признаки для обучения.")
-        return ColumnTransformer(transformers, verbose_feature_names_out=False), numeric, categorical
+        from .preprocessing import build_preprocessor
+        return build_preprocessor(X, config)
+
+    def _dataset_context(self, request):
+        bundle = self.data_service.resolve(request["dataset_id"], request.get("target"), request.get("features"))
+        group_column = request.get("cv_config", {}).get("group_column") or request.get("split", {}).get("group_column")
+        groups = None
+        X = bundle.X
+        if group_column:
+            if group_column == bundle.target_name:
+                raise ValueError("Цель нельзя использовать как идентификатор группы.")
+            groups = np.asarray(self.data_service.read_column(request["dataset_id"], group_column))
+            if pd.isna(groups).any():
+                raise ValueError("Идентификаторы групп не должны содержать пропуски.")
+            X = X.drop(columns=[group_column], errors="ignore")
+        X, numeric = self._clean_features(X)
+        return bundle, X, numeric, np.asarray(bundle.y, dtype=float).reshape(-1), groups
+
+    def _partition(self, X, y, groups, request):
+        from .validation import split_holdout
+        return split_holdout(len(X), request.get("split", {}), int(request.get("seed", 42)),
+                             groups=groups, cv_config=request.get("cv_config", {}))
 
     @staticmethod
     def _linear_parameters(estimator, p):
@@ -150,12 +146,11 @@ class TrainingService:
 
     def prediction_grid(self, request, pipeline, x_feature, y_feature=None):
         """Predict an arbitrary original-feature slice using an already fitted model."""
-        bundle = self.data_service.resolve(request["dataset_id"], request.get("target"), request.get("features"))
-        X, numeric = self._clean_features(bundle.X)
+        bundle, X, numeric, y, groups = self._dataset_context(request)
         selected = [x_feature] + ([y_feature] if y_feature is not None else [])
         if len(set(selected)) != len(selected) or any(name not in numeric for name in selected):
             raise ValueError("Для сетки выбери один или два разных числовых признака из обученного набора.")
-        parts = self._split(len(X), request.get("split", {}), int(request.get("seed", 42)))
+        parts = self._partition(X, y, groups, request)
         grid, _ = self._grid(X, numeric, parts, pipeline, selected)
         if grid is None:
             raise ValueError("Выбранный признак полностью состоит из пропусков в обучающей части.")
@@ -341,9 +336,7 @@ class TrainingService:
         started = time.perf_counter()
         self._check(cancelled)
         progress({"progress": 0.01, "message": "Читаем данные и проверяем настройки."})
-        bundle = self.data_service.resolve(request["dataset_id"], request.get("target"), request.get("features"))
-        X, numeric_columns = self._clean_features(bundle.X)
-        y = np.asarray(bundle.y, dtype=float).reshape(-1)
+        bundle, X, numeric_columns, y, groups = self._dataset_context(request)
         if len(X) != len(y) or not np.all(np.isfinite(y)):
             raise ValueError("Целевая переменная должна быть числовой, без пропусков и бесконечностей.")
         if len(X) > 100000:
@@ -353,9 +346,9 @@ class TrainingService:
         seed = int(request.get("seed", 42))
         if not 0 <= seed < 2**32 - 1:
             raise ValueError("seed должен быть целым числом от 0 до 4294967294.")
-        parts = self._split(len(X), request.get("split", {}), seed)
+        parts = self._partition(X, y, groups, request)
         preprocessor, numeric, categorical = self._preprocessor(X, request.get("preprocessing", {}))
-        if not request.get("preprocessing", {}).get("impute", True) and X.isna().any().any():
+        if request.get("preprocessing", {}).get("imputation", "median" if request.get("preprocessing", {}).get("impute", True) else "none") == "none" and X.isna().any().any():
             raise ValueError("В признаках есть пропуски. Включи заполнение пропусков или исправь данные.")
         self._check(cancelled)
         train_X, train_y = X.iloc[parts["train"]], y[parts["train"]]
@@ -364,11 +357,17 @@ class TrainingService:
         estimated_width += sum(max(1, train_X[column].nunique(dropna=True)) for column in categorical)
         if estimated_width > 2000 or estimated_width * len(train_X) > 15000000:
             raise ValueError("Преобразования создадут более 2000 признаков или 15 миллионов обучающих ячеек. Сократи категории, признаки либо степень полинома.")
-        Xt = preprocessor.fit_transform(train_X)
+        Xt = preprocessor.fit_transform(train_X, train_y)
         if Xt.shape[1] > 2000 or Xt.size > 15000000:
             raise ValueError("После преобразований превышен предел 2000 признаков или 15 миллионов ячеек. Сократи признаки, категории или степень полинома.")
         feature_names = preprocessor.get_feature_names_out().tolist()
         transformed = {name: (Xt if name == "train" else preprocessor.transform(X.iloc[indices])) for name, indices in parts.items()}
+        from .preprocessing import ResamplingService
+        original_train_y = train_y.copy()
+        if request.get("resampling", {}).get("method", "none") != "none" and (request.get("cv_config", {}).get("strategy") == "timeseries" or request.get("split", {}).get("shuffle") is False):
+            raise ValueError("Для временных рядов пересэмплирование выключено: оно меняет хронологию наблюдений.")
+        Xt, train_y, resampling = ResamplingService().fit_resample(
+            Xt, train_y, request.get("resampling", {}), seed=seed, categorical=bool(categorical))
         model_id = request.get("model", "ridge")
         params = request.get("params", {})
         estimator = self.model_registry.create(model_id, params, seed)
@@ -399,16 +398,18 @@ class TrainingService:
             if coef is None:
                 coef, intercept = self._linear_parameters(estimator, Xt.shape[1])
             if use_estimator:
-                train_pred = estimator.predict(Xt)
+                train_pred = estimator.predict(transformed["train"])
                 validation_pred = estimator.predict(transformed["validation"])
                 display_pred = estimator.predict(display_Xt)
                 objective = self._objective(model_id, estimator, Xt, train_y)
             else:
-                train_pred = Xt @ coef + intercept
+                train_pred = transformed["train"] @ coef + intercept
                 validation_pred = transformed["validation"] @ coef + intercept
                 display_pred = display_Xt @ coef + intercept
                 objective = None
-            item = {"step": int(step), "coef": coef.tolist() if coef is not None else [], "intercept": intercept, "train_loss": float(np.mean((train_y - train_pred)**2)), "validation_loss": float(np.mean((y[parts["validation"]] - validation_pred)**2)), "objective": objective, "predicted": display_pred.tolist()}
+            item = {"step": int(step), "coef": coef.tolist() if coef is not None else [], "intercept": intercept, "train_loss": float(np.mean((original_train_y - train_pred)**2)), "validation_loss": float(np.mean((y[parts["validation"]] - validation_pred)**2)), "objective": objective, "predicted": display_pred.tolist()}
+            fit_pred = estimator.predict(Xt) if use_estimator else Xt @ coef + intercept
+            item["fit_loss"] = float(np.mean((train_y - fit_pred)**2))
             return item
 
         progress({"progress": 0.08, "message": "Преобразования обучены только на обучающей части. Запускаем модель."})
@@ -454,7 +455,7 @@ class TrainingService:
                         if len(alphas) > step:
                             item["alpha"] = float(alphas[step])
                             if model_id == "lassolars":
-                                item["objective"] = item["train_loss"] / 2 + item["alpha"] * float(np.abs(coef).sum())
+                                item["objective"] = item["fit_loss"] / 2 + item["alpha"] * float(np.abs(coef).sum())
                         trace.append(item)
                         loss_history.append({key: item[key] for key in ("step", "train_loss", "validation_loss", "objective")})
             elif model_id == "ransac":
@@ -546,7 +547,7 @@ class TrainingService:
                 shape = (len(grid["y"]), len(grid["x"])) if grid["y"] is not None else (len(grid["x"]),)
                 item["grid"] = dict(grid, z=grid_pred.reshape(shape), note=grid["note"] + " Предсказания соответствуют коэффициентам этого настоящего кадра.")
         regularization_path = self._regularization_path(request, model_id, estimator, Xt, train_y, feature_names, progress, cancelled, captured_warnings)
-        cv = self._cross_validation(request, X.iloc[parts["train"]], train_y, preprocessor, estimator, selected_metrics, expression, metric_params, progress, cancelled)
+        cv = self._cross_validation(request, X.iloc[parts["train"]], original_train_y, preprocessor, estimator, selected_metrics, expression, metric_params, progress, cancelled, groups[parts["train"]] if groups is not None else None)
         learning_curve = self._learning_curve(request, X, y, parts, preprocessor, estimator, cancelled)
         importance = self._importance(request, X.iloc[parts["validation"]], y[parts["validation"]], pipeline, selected_metrics, expression, metric_params, cancelled)
         progress({"progress": 0.98, "message": "Сохраняем воспроизводимую модель и результаты."})
@@ -567,7 +568,8 @@ class TrainingService:
         if hasattr(estimator, "inlier_mask_"):
             global_inliers = np.empty(len(X), dtype=object)
             global_inliers[:] = None
-            global_inliers[parts["train"]] = np.asarray(estimator.inlier_mask_, dtype=bool)
+            if len(estimator.inlier_mask_) == len(parts["train"]) and resampling.get("method", "none") == "none":
+                global_inliers[parts["train"]] = np.asarray(estimator.inlier_mask_, dtype=bool)
             inliers = global_inliers[display_indices].tolist()
         if len(display_indices) < len(X):
             captured_warnings.append(f"Графики показывают воспроизводимую выборку из {len(display_indices)} строк. Модель и метрики рассчитаны по всем {len(X)} строкам.")
@@ -588,9 +590,9 @@ class TrainingService:
             "prediction_grid": grid, "regularization_path": regularization_path,
             "objective_surface": surface, "penalty_geometry": geometry,
             "diagnostics": {"correlation": {"feature_names": numeric, "matrix": correlation.to_numpy()}, "condition_number": float(np.linalg.cond(Xt)) if Xt.size < 3000000 and Xt.shape[1] < 200 else None, "rank": int(np.linalg.matrix_rank(Xt)) if Xt.size < 3000000 and Xt.shape[1] < 200 else None, "bayesian_evidence": getattr(estimator, "scores_", None), "learning_curve": learning_curve, "permutation_importance": importance, "ransac_inliers": inliers},
-            "split": {"counts": {name: len(indices) for name, indices in parts.items()}, "indices": {name: indices for name, indices in parts.items()}, "shuffle": request.get("split", {}).get("shuffle", True)},
-            "cv": cv, "timing": {"seconds": time.perf_counter() - started},
-            "preprocessing": {"scale": request.get("preprocessing", {}).get("scale", True), "degree": request.get("preprocessing", {}).get("degree", 1), "impute": request.get("preprocessing", {}).get("impute", True), "numeric_features": numeric, "categorical_features": categorical, "fitted_on": "train", "transformed_features": feature_names},
+            "split": {"counts": {name: len(indices) for name, indices in parts.items()}, "indices": {name: indices for name, indices in parts.items()}, "shuffle": False if request.get("cv_config", {}).get("strategy") == "timeseries" else request.get("split", {}).get("shuffle", True)},
+            "resampling": resampling, "cv": cv, "timing": {"seconds": time.perf_counter() - started},
+            "preprocessing": {"scale": request.get("preprocessing", {}).get("scale", True), "degree": request.get("preprocessing", {}).get("degree", 1), "impute": request.get("preprocessing", {}).get("impute", True), "numeric_features": numeric, "categorical_features": categorical, "fitted_on": "train", "transformed_features": feature_names, "config": request.get("preprocessing", {})},
         }
         progress({"progress": 1.0, "message": "Эксперимент готов."})
         return json_safe(result)
@@ -609,53 +611,69 @@ class TrainingService:
         alphas = np.geomspace(current * 0.01, current * 100, count)
         coefficients = []
         valid_alphas = []
-        with warnings.catch_warnings(record=True) as recorded:
-            warnings.simplefilter("always")
-            for j, alpha in enumerate(alphas):
-                self._check(cancelled)
-                candidate = clone(estimator).set_params(alpha=float(alpha))
-                try:
-                    candidate.fit(Xt, y)
-                    coef, _ = self._linear_parameters(candidate, Xt.shape[1])
-                    if coef is not None and np.all(np.isfinite(coef)):
-                        coefficients.append(coef.tolist())
-                        valid_alphas.append(float(alpha))
-                except (ValueError, RuntimeError, ArithmeticError) as exc:
-                    output_warnings.append(f"Путь α: значение {alpha:.3g} пропущено ({exc}).")
-                progress({"progress": 0.7 + 0.13 * (j + 1) / len(alphas), "message": f"Отдельный опыт с α: {j + 1} из {len(alphas)}; используется только обучение."})
-            output_warnings.extend(str(w.message) for w in recorded)
-        return {"alphas": valid_alphas, "coefficients": coefficients, "feature_names": names, "fitted_on": "train", "note": "Каждая точка — новая задача с другим α. Это не история обучения одной модели."} if valid_alphas else None
+        from .validation import bounded_jobs, single_threaded
+        from threadpoolctl import threadpool_limits
 
-    def _cross_validation(self, request, X, y, preprocessor, estimator, selection, expression, metric_params, progress, cancelled):
-        folds = int(request.get("cv", 0))
-        if folds == 0:
-            return None
-        shuffle = request.get("split", {}).get("shuffle", True)
-        if not 2 <= folds <= 10 or folds > len(y) or (not shuffle and folds >= len(y)):
-            raise ValueError("Для перекрестной проверки выбери от 2 до 10 частей, не больше числа обучающих строк.")
-        splitter = KFold(folds, shuffle=True, random_state=int(request.get("seed", 42))) if shuffle else TimeSeriesSplit(folds)
-        results = []
-        for j, (train, valid) in enumerate(splitter.split(X)):
+        n_jobs = bounded_jobs(request.get("n_jobs", 1))
+
+        def fit_alpha(alpha):
             self._check(cancelled)
-            candidate = Pipeline([("preprocessing", clone(preprocessor)), ("model", clone(estimator))])
-            candidate.fit(X.iloc[train], y[train])
-            pred = candidate.predict(X.iloc[valid])
-            values, details = self.metric_registry.evaluate(y[valid], pred, selection, expression, metric_params)
-            results.append({"fold": j + 1, "train_size": len(train), "validation_size": len(valid), "metrics": values, "metric_details": details})
-            progress({"progress": 0.84 + 0.12 * (j + 1) / folds, "message": f"Перекрестная проверка только внутри обучения: {j + 1} из {folds}."})
-        metric_names = list(results[0]["metrics"])
-        summary = {}
-        for name in metric_names:
-            values = [fold["metrics"][name] for fold in results if fold["metrics"][name] is not None]
-            summary[name] = {"mean": float(np.mean(values)) if values else None, "std": float(np.std(values)) if values else None, "valid_folds": len(values)}
-        return {"folds": results, "summary": summary, "fitted_on": "train", "kind": "KFold" if shuffle else "TimeSeriesSplit", "note": "Внешние validation и test не участвуют в подборе. В каждом сгибе преобразования обучаются заново."}
+            candidate = single_threaded(estimator).set_params(alpha=float(alpha))
+            try:
+                candidate.fit(Xt, y)
+                self._check(cancelled)
+                coef, _ = self._linear_parameters(candidate, Xt.shape[1])
+                return float(alpha), coef, None
+            except TrainingCancelled:
+                raise
+            except (ValueError, RuntimeError, ArithmeticError) as exc:
+                return float(alpha), None, str(exc)
+
+        # One native-thread limit covers all workers. Nested BLAS pools would
+        # otherwise multiply n_jobs; threads also work inside daemon job workers.
+        with threadpool_limits(limits=1), warnings.catch_warnings(record=True) as recorded:
+            warnings.simplefilter("always")
+            with joblib.Parallel(n_jobs=n_jobs, backend="threading", return_as="generator", pre_dispatch=n_jobs) as parallel:
+                completed = parallel(joblib.delayed(fit_alpha)(alpha) for alpha in alphas)
+                try:
+                    for j, (alpha, coef, error) in enumerate(completed):
+                        self._check(cancelled)
+                        if coef is not None and np.all(np.isfinite(coef)):
+                            coefficients.append(coef.tolist())
+                            valid_alphas.append(alpha)
+                        if error:
+                            output_warnings.append(f"Путь α: значение {alpha:.3g} пропущено ({error}).")
+                        progress({"progress": 0.7 + 0.13 * (j + 1) / len(alphas), "message": f"Отдельный опыт с α: {j + 1} из {len(alphas)}; используется только обучение."})
+                finally:
+                    completed.close()
+            output_warnings.extend(str(w.message) for w in recorded)
+        return {"alphas": valid_alphas, "coefficients": coefficients, "feature_names": names, "fitted_on": "train", "n_jobs": n_jobs, "note": "Каждая точка — новая задача с другим α. Это не история обучения одной модели."} if valid_alphas else None
+
+    def _cross_validation(self, request, X, y, preprocessor, estimator, selection, expression, metric_params, progress, cancelled, groups=None):
+        from .validation import evaluate_cv
+        from .pipeline import RegressionPipeline
+        config = request.get("cv_config")
+        if not config:
+            folds = int(request.get("cv", 0))
+            if folds == 0:
+                return None
+            config = {"strategy": "kfold" if request.get("split", {}).get("shuffle", True) else "timeseries", "folds": folds}
+        if config.get("strategy", "none") == "none" or config.get("enabled") is False:
+            return None
+        pipeline = RegressionPipeline([("preprocessing", clone(preprocessor)), ("model", clone(estimator))],
+                                      resampling=request.get("resampling", {}), seed=int(request.get("seed", 42)))
+        def cv_progress(event):
+            progress(dict(event, progress=.84 + .12 * float(event.get("progress", 0))))
+        return evaluate_cv(pipeline, X, y, config, selection, expression, metric_params,
+                           groups=groups, seed=int(request.get("seed", 42)), progress=cv_progress,
+                           cancelled=cancelled, n_jobs=request.get("n_jobs", 1))
 
     def _learning_curve(self, request, X, y, parts, preprocessor, estimator, cancelled):
         if not request.get("learning_curve", False):
             return None
         train = parts["train"]
         validation = parts["validation"]
-        order = np.random.default_rng(int(request.get("seed", 42))).permutation(train) if request.get("split", {}).get("shuffle", True) else train
+        order = np.random.default_rng(int(request.get("seed", 42))).permutation(train) if request.get("split", {}).get("shuffle", True) and request.get("cv_config", {}).get("strategy") != "timeseries" else train
         sizes = np.unique(np.linspace(max(10, len(train) // 5), len(train), 5).astype(int))
         output = []
         for size in sizes:
@@ -663,7 +681,8 @@ class TrainingService:
                 continue
             self._check(cancelled)
             selected = order[:size]
-            candidate = Pipeline([("preprocessing", clone(preprocessor)), ("model", clone(estimator))])
+            from .pipeline import RegressionPipeline
+            candidate = RegressionPipeline([("preprocessing", clone(preprocessor)), ("model", clone(estimator))], resampling=request.get("resampling", {}), seed=int(request.get("seed", 42)))
             try:
                 candidate.fit(X.iloc[selected], y[selected])
                 train_pred = candidate.predict(X.iloc[selected])
@@ -680,6 +699,17 @@ class TrainingService:
         if X.shape[1] > 40 or len(X) > 15000:
             return {"reason": "Перестановочная важность ограничена 40 признаками и 15000 строками validation."}
         from sklearn.inspection import permutation_importance
+        from threadpoolctl import threadpool_limits
+        from .validation import bounded_jobs
+
+        n_jobs = bounded_jobs(request.get("n_jobs", 1))
+        workers = {name: 1 for name, value in pipeline.get_params(deep=True).items()
+                   if (name == "n_jobs" or name.endswith("__n_jobs")) and value != 1}
+        if workers:
+            # clone() would discard the fitted preprocessing/model. A copy keeps
+            # learned parameters and leaves the exported fitted pipeline intact.
+            from copy import deepcopy
+            pipeline = deepcopy(pipeline).set_params(**workers)
 
         selected = [selection] if isinstance(selection, str) else list(selection or ["mse"])
         metric = next((name for name in selected if name not in {"all", "custom"}), "mse")
@@ -687,15 +717,18 @@ class TrainingService:
         direction = directions.get(metric, "min")
 
         def score(estimator, samples, target):
+            self._check(cancelled)
             values, details = self.metric_registry.evaluate(target, estimator.predict(samples), [metric], expression, metric_params)
+            self._check(cancelled)
             value = values[metric]
             if value is None:
                 raise ValueError(details[metric]["reason"])
             return value if direction == "max" else -value
 
         try:
-            result = permutation_importance(pipeline, X, y, scoring=score, n_repeats=5, random_state=int(request.get("seed", 42)), n_jobs=1)
+            with threadpool_limits(limits=1), joblib.parallel_backend("threading"):
+                result = permutation_importance(pipeline, X, y, scoring=score, n_repeats=5, random_state=int(request.get("seed", 42)), n_jobs=n_jobs)
             self._check(cancelled)
-            return {"feature_names": X.columns.tolist(), "mean": result.importances_mean, "std": result.importances_std, "metric": metric, "fitted_on": "validation", "note": "Падение качества при перемешивании исходного признака в validation. Коррелированные признаки могут взаимно заменяться; отрицательная важность возможна."}
+            return {"feature_names": X.columns.tolist(), "mean": result.importances_mean, "std": result.importances_std, "metric": metric, "fitted_on": "validation", "n_jobs": n_jobs, "note": "Падение качества при перемешивании исходного признака в validation. Коррелированные признаки могут взаимно заменяться; отрицательная важность возможна."}
         except ValueError as exc:
             return {"reason": str(exc)}

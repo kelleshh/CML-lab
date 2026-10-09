@@ -1,4 +1,9 @@
 import {ChartManager} from './charts.js';
+import {DatasetWorkspace} from './datasets-ui.js';
+import {installHelp} from './help.js';
+import {renderBeginnerControls} from './beginner.js';
+import {PreprocessingWorkspace} from './preprocessing-ui.js';
+import {ValidationWorkspace} from './validation-ui.js';
 
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -6,6 +11,7 @@ const number = value => value == null || !Number.isFinite(Number(value)) ? '—'
 const state = {catalogue:null,dataset:null,result:null,job:null,request:null,busy:false,view:'lab',chartTab:'overview',frame:0,playing:false,selectedModels:new Set(['ols','ridge','lasso','elasticnet','huber','sgd']),comparisons:[],editor:null,lesson:0,revealed:false};
 const charts = new ChartManager();
 let playbackTimer = null, autoTimer = null, toastTimer = null;
+let datasetWorkspace, preprocessingWorkspace, validationWorkspace, help, beginnerControls;
 
 function toast(message) {
   $('toast').textContent=message; $('toast').classList.add('visible');
@@ -24,6 +30,7 @@ function switchView(view) {
   document.querySelectorAll('.view').forEach(el=>el.classList.toggle('active',el.id===`view-${view}`));
   document.querySelectorAll('.nav').forEach(el=>el.classList.toggle('active',el.dataset.view===view));
   if(view==='lab'&&state.result) setTimeout(()=>renderCharts(),20);
+  if(view==='data')datasetWorkspace?.refreshLibrary().then(()=>datasetWorkspace.resize()).catch(error=>toast(error.message));
   if(view==='history') refreshHistory().catch(error=>toast(error.message));
   window.location.hash=view;
 }
@@ -41,7 +48,30 @@ function showModelParameters() {
   $('model-params').querySelectorAll('[data-param]').forEach(el=>el.addEventListener('change',()=>scheduleFit()));
   const slider=$('model-params').querySelector('.alpha-slider');
   if(slider)slider.addEventListener('input',()=>{const input=$('model-params').querySelector('[data-param="alpha"]');input.value=Number((10**Number(slider.value)).toPrecision(4));scheduleFit();});
+  validationWorkspace?.setModel?.(model);updateParameterMode();help?.refresh($('model-params'));
   showExplanation();
+}
+function openLesson(id) {
+  const index=state.catalogue?.lessons.findIndex(item=>item.id===id || item.title===id) ?? -1;
+  state.lesson=index>=0?index:0; renderLearning();switchView('learn');
+  $('lesson-content').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function applyModelParameters(patch) {
+  for(const [key,value] of Object.entries(patch)) {
+    const input=$('model-params').querySelector(`[data-param="${key}"]`);
+    if(input) {if(input.type==='checkbox')input.checked=value;else input.value=value;}
+  }
+  const slider=$('model-params').querySelector('.alpha-slider');
+  const alpha=$('model-params').querySelector('[data-param="alpha"]');
+  if(slider&&alpha)slider.value=Math.log10(Math.max(Number(alpha.value),1e-5));
+}
+function updateParameterMode() {
+  const beginner=$('parameter-mode').value==='beginner';
+  $('model-params').hidden=beginner;$('model-presets').hidden=!beginner;
+  beginnerControls?.destroy();
+  if(beginner)beginnerControls=renderBeginnerControls($('model-presets'),selectedModel(),{
+    nFeatures:Math.max(1,$('features').querySelectorAll('input:checked').length),params:modelParameters(),onChange:patch=>{applyModelParameters(patch);scheduleFit();},
+    onMode:mode=>{$('parameter-mode').value=mode;updateParameterMode();}});
 }
 function modelParameters() {
   const model=selectedModel(), params={};
@@ -77,6 +107,7 @@ function setDataset(dataset) {
   const targets=dataset.targets||dataset.columns.filter(c=>c.numeric).map(c=>c.name);
   $('target').innerHTML=(!dataset.default_target?'<option value="">Выберите числовую цель…</option>':'')+targets.map(name=>`<option value="${esc(name)}" ${name===dataset.default_target?'selected':''}>${esc(name)}</option>`).join('');
   refreshFeatures();
+  datasetWorkspace?.setDataset(dataset);preprocessingWorkspace?.setDataset(dataset);validationWorkspace?.setDataset(dataset);
   $('metrics-summary').innerHTML='<div class="metric-card"><div class="metric-name">Данные готовы</div><strong>'+number(dataset.rows)+'</strong><div class="metric-subtitle">Обучите выбранную модель</div></div>';
   $('job-status').textContent='Данные загружены. Настройте модель и запустите обучение.';
   $('warnings').innerHTML='';$('comparison-table').innerHTML='';state.comparisons=[];
@@ -85,12 +116,19 @@ function setDataset(dataset) {
   document.querySelectorAll('.plot').forEach(el=>el.innerHTML='<div class="plot-empty">Обучите модель на выбранных данных.</div>');
   $('timeline').disabled=true;
 }
+function clearDataset(identifier) {
+  if(state.dataset?.id!==identifier)return;
+  state.dataset=null;state.result=null;state.job=null;state.request=null;stopPlayback();charts.destroy();
+  $('target').innerHTML='';$('features').innerHTML='';$('dataset-info').textContent='Выберите набор из библиотеки';
+  $('job-status').textContent='Набор удален. Выберите или создайте другой.';$('metrics-summary').innerHTML='';
+  document.querySelectorAll('.result-area .plot').forEach(plot=>plot.innerHTML='<p class="plot-empty">Выберите данные и обучите модель.</p>');
+}
 function refreshFeatures() {
   if(!state.dataset)return;
   const target=$('target').value;
   const excluded=state.dataset.excluded_features||[];
-  $('features').innerHTML=state.dataset.columns.filter(c=>c.name!==target&&!excluded.includes(c.name)).map(column=>`<label class="check" title="Пропусков: ${column.missing||0}"><input type="checkbox" value="${esc(column.name)}" checked>${esc(column.name)} <span class="help-text">${column.numeric?'число':'категория'}</span></label>`).join('');
-  $('features').querySelectorAll('input').forEach(input=>input.addEventListener('change',scheduleFit));
+  $('features').innerHTML=state.dataset.columns.filter(c=>c.name!==target&&!excluded.includes(c.name)).map(column=>`<label class="check" title="Пропусков: ${column.missing||0}"><input type="checkbox" value="${esc(column.name)}" checked><span class="feature-label">${esc(column.name)}</span> <span class="help-text">${column.numeric?'число':'категория'}</span></label>`).join('');
+  $('features').querySelectorAll('input').forEach(input=>input.addEventListener('change',()=>{updateParameterMode();scheduleFit();}));
 }
 function requestFor(model=$('model').value,params=modelParameters()) {
   if(!state.dataset)throw new Error('Сначала загрузите данные.');
@@ -102,16 +140,20 @@ function requestFor(model=$('model').value,params=modelParameters()) {
   const metrics=Array.from($('metric-options').querySelectorAll('input:checked')).map(input=>input.value);
   const custom_metric=$('custom-metric').value.trim();
   if(!metrics.length&&!custom_metric)throw new Error('Выберите метрику или задайте свою формулу.');
-  return {dataset_id:state.dataset.id,target:$('target').value,features,model,params,seed:Number($('seed').value),split:{train,validation,test,shuffle:$('shuffle').checked},preprocessing:{scale:$('scale').checked,impute:$('impute').checked,degree:Number($('degree').value)},metrics,custom_metric,metric_params:{quantile:Number($('metric-quantile').value),power:Number($('metric-power').value)},epochs:Number($('epochs').value),cv:Number($('cv').value),regularization_path:$('path-enabled').checked,learning_curve:$('learning-curve').checked,permutation_importance:$('permutation-importance').checked};
+  const advanced=preprocessingWorkspace?.getConfig()||{};
+  const cvConfig=validationWorkspace?.getCVConfig()||{strategy:'none'};
+  return {dataset_id:state.dataset.id,target:$('target').value,features:features.filter(name=>name!==cvConfig.group_column),model,params,seed:Number($('seed').value),split:{train,validation,test,shuffle:$('shuffle').checked},preprocessing:{scale:$('scale').checked,impute:$('impute').checked,degree:Number($('degree').value),...(advanced.preprocessing||{})},resampling:advanced.resampling||{},cv_config:cvConfig,n_jobs:validationWorkspace?.getParallelism()||1,metrics,custom_metric,metric_params:{quantile:Number($('metric-quantile').value),power:Number($('metric-power').value)},epochs:Number($('epochs').value),cv:Number($('cv').value),regularization_path:$('path-enabled').checked,learning_curve:$('learning-curve').checked,permutation_importance:$('permutation-importance').checked};
 }
 function setBusy(busy) {
   state.busy=busy;$('run').disabled=busy;$('compare').disabled=busy;$('tune').disabled=busy;$('generate').disabled=busy;
   document.querySelectorAll('.control-panel input,.control-panel select,.control-panel button').forEach(element=>element.disabled=busy);
   $('cancel').disabled=false;$('save').disabled=busy;$('upload').disabled=busy;$('openml-load').disabled=busy;$('edit-points').disabled=busy;
+  datasetWorkspace?.setBusy?.(busy);preprocessingWorkspace?.setBusy?.(busy);validationWorkspace?.setBusy?.(busy);
   $('cancel').hidden=!busy;$('progress').hidden=!busy;
   if(busy)stopPlayback();
 }
 function liveTraining(events) {
+  validationWorkspace?.renderProgress?.(events);
   const frames=events.filter(event=>event.frame).map(event=>event.frame);
   if(frames.length<2||!window.Plotly)return;
   const isDark=document.body.dataset.theme==='dark';
@@ -154,7 +196,10 @@ async function changeAxes() {
   await renderCharts();
 }
 async function setResult(result) {
-  state.result=result;state.frame=(result.trace||[]).length-1;
+  state.result=result;if(result.effective_request){state.request={...state.request,...result.effective_request};applyModelParameters(state.request.params||{});}
+  if(result.search?.best_params){state.request.params=result.search.best_params;applyModelParameters(result.search.best_params);beginnerControls?.setParams?.(result.search.best_params);}
+  validationWorkspace?.renderResults?.(result);
+  state.frame=(result.trace||[]).length-1;
   const names=result.plot_data?.feature_names||result.raw_feature_names||result.feature_names||[];
   $('x-feature').innerHTML=names.map((name,index)=>`<option value="${index}">${esc(name)}</option>`).join('');
   $('y-feature').innerHTML=names.map((name,index)=>`<option value="${index}" ${index===Math.min(1,names.length-1)?'selected':''}>${esc(name)}</option>`).join('');
@@ -165,6 +210,19 @@ async function setResult(result) {
   $('warnings').innerHTML=(result.warnings||[]).map(warning=>`<div class="warning">${esc(warning)}</div>`).join('');
   renderMetrics();showExplanation();renderPredictionInputs();await renderCharts();
   $('reveal-test').disabled=state.revealed;
+  await refreshExportCapabilities();
+}
+async function refreshExportCapabilities() {
+  if(!state.job)return;
+  const identifier=state.job, response=await api(`/jobs/${identifier}/export-capabilities`);
+  if(identifier!==state.job)return;
+  const names={joblib:'model'};
+  for(const format of response.formats||[]) {
+    const option=Array.from($('export').options).find(item=>item.value===(names[format.format]||format.format));
+    if(option){option.disabled=!format.available;option.title=format.reason||'';option.textContent=`${format.label}${format.available?'':' · недоступен'}`;}
+  }
+  if($('export-capabilities'))$('export-capabilities').innerHTML=(response.formats||[]).map(format=>`<p><strong>${esc(format.label)}</strong> — ${format.available?'доступен':'недоступен'}${format.reason?': '+esc(format.reason):''}</p>`).join('');
+  $('export').title=(response.formats||[]).filter(format=>format.reason).map(format=>`${format.label}: ${format.reason}`).join('\n');
 }
 function metricName(id) {return state.catalogue.metrics.find(metric=>metric.id===id)?.name||id;}
 function renderMetrics() {
@@ -174,7 +232,7 @@ function renderMetrics() {
   $('metrics-table').innerHTML=`<div class="table-wrapper"><table><thead><tr><th>Метрика</th><th>Обучение</th><th>Выбор</th><th>Итоговая проверка</th></tr></thead><tbody>${selected.map(id=>`<tr title="${esc(result.metric_details?.validation?.[id]?.reason||'')}"><td>${esc(metricName(id))}</td><td>${number(result.metrics.train?.[id])}</td><td>${number(validation[id])}</td><td>${state.revealed?number(result.metrics.test?.[id]):'Скрыта'}</td></tr>`).join('')}</tbody></table></div>`;
   const invalid=Object.entries(result.metric_details?.validation||{}).filter(([id,detail])=>detail&&typeof detail==='object'&&(detail.reason||detail.error));
   $('metrics-table').innerHTML+=invalid.map(([id,detail])=>`<p class="help-text">${esc(metricName(id))}: ${esc(detail.reason||detail.error)}</p>`).join('');
-  $('cv-results').innerHTML=result.cv&&Object.keys(result.cv).length?`<details><summary>Перекрестная проверка на обучающей части</summary><pre class="help-text">${esc(JSON.stringify(result.cv,null,2))}</pre></details>`:'';
+  if(!validationWorkspace)$('cv-results').innerHTML=result.cv&&Object.keys(result.cv).length?`<details><summary>Перекрестная проверка на обучающей части</summary><pre class="help-text">${esc(JSON.stringify(result.cv,null,2))}</pre></details>`:'';
 }
 function stopPlayback() {state.playing=false;clearTimeout(playbackTimer);$('play').textContent='▶';}
 async function showFrame(index) {
@@ -201,9 +259,9 @@ function renderModels() {
 function renderLearning() {
   $('lesson-list').innerHTML=state.catalogue.lessons.map((lesson,index)=>`<button class="lesson-button ${index===state.lesson?'active':''}" data-lesson="${index}">${String(index+1).padStart(2,'0')} · ${esc(lesson.title)}</button>`).join('');
   const lesson=state.catalogue.lessons[state.lesson];if(!lesson)return;
-  $('lesson-content').innerHTML=`<h2>${esc(lesson.title)}</h2><p>${esc(lesson.summary)}</p>${lesson.sections.map(section=>`<h3>${esc(section.title)}</h3><p>${esc(section.text)}</p>${section.formula?`<code>${esc(section.formula)}</code>`:''}`).join('')}<div class="exercise"><h3>Попробуй сам</h3><p>${esc(typeof lesson.exercise==='object'?lesson.exercise.text||JSON.stringify(lesson.exercise):lesson.exercise)}</p>${lesson.preset?'<button id="lesson-run" class="button primary">Открыть этот эксперимент</button>':''}</div>`;
+  $('lesson-content').innerHTML=`<h2>${esc(lesson.title)}</h2><p>${esc(lesson.summary)}</p>${lesson.sections.map(section=>`<h3>${esc(section.title)}</h3>${section.text.split('\n\n').map(text=>`<p>${esc(text)}</p>`).join('')}${section.formula?`<code>${esc(section.formula)}</code>`:''}`).join('')}<div class="exercise"><h3>Попробуй сам</h3><p>${esc(typeof lesson.exercise==='object'?lesson.exercise.text||JSON.stringify(lesson.exercise):lesson.exercise)}</p>${lesson.preset?'<button id="lesson-run" class="button primary">Открыть этот эксперимент</button>':''}</div>${lesson.sources?.length?`<section class="lesson-sources"><h3>Читать подробнее</h3><ul>${lesson.sources.map(source=>`<li><a href="${esc(source.url)}" target="_blank" rel="noopener">${esc(source.title)}</a></li>`).join('')}</ul></section>`:''}`;
   $('lesson-list').querySelectorAll('[data-lesson]').forEach(button=>button.onclick=()=>{state.lesson=Number(button.dataset.lesson);renderLearning();});
-  if($('lesson-run'))$('lesson-run').onclick=safely(async()=>{const preset=lesson.preset;$('scale').checked=true;$('impute').checked=true;$('degree').value=1;$('train-share').value=60;$('val-share').value=20;$('shuffle').checked=true;$('cv').value=0;$('custom-metric').value='';$('learning-curve').checked=false;$('permutation-importance').checked=false;$('path-enabled').checked=true;$('metric-options').querySelectorAll('input').forEach(input=>input.checked=['mse','rmse','mae','r2'].includes(input.value));$('metric-quantile').value=preset.params?.quantile??.5;updateSplit();await loadData(preset.dataset);$('model').value=preset.model;showModelParameters();for(const [key,value]of Object.entries(preset.params||{})){const input=$('model-params').querySelector(`[data-param="${key}"]`);if(input){if(input.type==='checkbox')input.checked=value;else input.value=value;}}if(preset.epochs)$('epochs').value=preset.epochs;switchView('lab');await runModel();});
+  if($('lesson-run'))$('lesson-run').onclick=safely(async()=>{const preset=lesson.preset;preprocessingWorkspace?.reset();validationWorkspace?.reset();$('scale').checked=true;$('impute').checked=true;$('degree').value=1;$('train-share').value=60;$('val-share').value=20;$('shuffle').checked=true;$('cv').value=0;$('custom-metric').value='';$('learning-curve').checked=false;$('permutation-importance').checked=false;$('path-enabled').checked=true;$('metric-options').querySelectorAll('input').forEach(input=>input.checked=['mse','rmse','mae','r2'].includes(input.value));$('metric-quantile').value=preset.params?.quantile??.5;updateSplit();await loadData(preset.dataset);$('model').value=preset.model;showModelParameters();for(const [key,value]of Object.entries(preset.params||{})){const input=$('model-params').querySelector(`[data-param="${key}"]`);if(input){if(input.type==='checkbox')input.checked=value;else input.value=value;}}preprocessingWorkspace?.setConfig(preset);validationWorkspace?.setConfig(preset);if(preset.epochs)$('epochs').value=preset.epochs;beginnerControls?.setParams?.(preset.params||{});switchView('lab');await runModel();});
   $('glossary').innerHTML='<dl>'+state.catalogue.glossary.map(item=>`<dt>${esc(item.term)}</dt><dd>${esc(item.definition)}</dd>`).join('')+'</dl>';
   renderFormulas($('lesson-content'));
 }
@@ -226,6 +284,14 @@ async function compareModels(tune=false) {
     if(valid.length){const best=valid[0];state.job=best.job;state.request=best.request;state.revealed=false;$('model').value=best.request.model;showModelParameters();for(const[key,value]of Object.entries(best.request.params)){const input=$('model-params').querySelector(`[data-param="${key}"]`);if(input){if(input.type==='checkbox')input.checked=value;else input.value=value;}}await setResult(best.result);toast(`По ${metricName(metric)} выбрана ${best.name}. Итоговая проверка еще скрыта.`);}else toast('Нет сравнимых результатов для выбранной метрики. Смотрите причины в таблице.');
   }finally{setBusy(false);}
 }
+async function runSearch() {
+  if(state.busy)return;
+  const request=requestFor();request.search=validationWorkspace.getSearchConfig(selectedModel());
+  if(!request.search)throw new Error('Выберите метод поиска параметров.');
+  request.search.metric=$('ranking-metric').value;request.search.direction=rankingDirection();
+  if(request.search.metric==='custom'&&!request.custom_metric)throw new Error('Задайте формулу своей метрики.');
+  setBusy(true);try{const result=await execute(request);await setResult(result);toast('Подбор завершен. Победитель выбран по CV внутри train.');}finally{setBusy(false);}
+}
 async function openDataEditor(index=null) {
   if(!state.dataset)throw new Error('Загрузите данные.');
   const offset=index!=null?Math.max(0,Math.floor(index/100)*100):0;
@@ -234,7 +300,7 @@ async function openDataEditor(index=null) {
 }
 function renderEditor() {
   const editor=state.editor;const columns=editor.columns.map(column=>typeof column==='string'?column:column.name);
-  $('data-editor').innerHTML=`<p class="help-text">Строки ${editor.offset+1}–${editor.offset+editor.rows.length} из ${editor.total}. Остальные строки сохраняются.</p><table><thead><tr><th>№</th>${columns.map(column=>`<th>${esc(column)}</th>`).join('')}</tr></thead><tbody>${[...editor.rows,...editor.additions].map((row,index)=>`<tr><td>${index<editor.rows.length?editor.offset+index+1:'Новая'}</td>${columns.map(column=>`<td><input data-row="${index}" data-column="${esc(column)}" value="${esc(row[column])}" aria-label="Строка ${index+1}, ${esc(column)}"></td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  $('data-editor').innerHTML=`<p class="help-text">Строки ${editor.offset+1}–${editor.offset+editor.rows.length} из ${editor.total}. Остальные строки сохраняются.</p><table><thead><tr><th>№</th>${columns.map(column=>`<th class="${column===$('target').value?'target-label':'feature-label'}">${esc(column)}</th>`).join('')}</tr></thead><tbody>${[...editor.rows,...editor.additions].map((row,index)=>`<tr><td>${index<editor.rows.length?editor.offset+index+1:'Новая'}</td>${columns.map(column=>`<td><input data-row="${index}" data-column="${esc(column)}" value="${esc(row[column])}" aria-label="Строка ${index+1}, ${esc(column)}"></td>`).join('')}</tr>`).join('')}</tbody></table>`;
   $('data-editor').querySelectorAll('input').forEach(input=>input.oninput=()=>{const index=Number(input.dataset.row),column=input.dataset.column;const definition=editor.columns.find(c=>c.name===column);const value=input.value===''?null:definition?.numeric?Number(input.value):input.value;const row=index<editor.rows.length?editor.rows[index]:editor.additions[index-editor.rows.length];row[column]=value;});
 }
 async function applyData() {
@@ -244,7 +310,7 @@ async function applyData() {
 function renderPredictionInputs() {
   if(!state.dataset)return;
   const features=state.request?.features||[];
-  $('prediction-inputs').innerHTML=features.slice(0,60).map(name=>{const column=state.dataset.columns.find(c=>c.name===name),value=state.dataset.preview?.[0]?.[name]??'';return `<label>${esc(name)}<input data-predict="${esc(name)}" type="${column?.numeric?'number':'text'}" value="${esc(value)}" step="any"></label>`;}).join('');
+  $('prediction-inputs').innerHTML=features.slice(0,60).map(name=>{const column=state.dataset.columns.find(c=>c.name===name),value=state.dataset.preview?.[0]?.[name]??'';return `<label class="feature-label">${esc(name)}<input data-predict="${esc(name)}" type="${column?.numeric?'number':'text'}" value="${esc(value)}" step="any"></label>`;}).join('');
 }
 async function refreshHistory() {
   const experiments=await api('/experiments');
@@ -255,23 +321,33 @@ async function refreshHistory() {
 function restoreRequest(request) {
   $('target').value=request.target;refreshFeatures();$('features').querySelectorAll('input').forEach(input=>input.checked=request.features.includes(input.value));
   $('model').value=request.model;showModelParameters();for(const[key,value]of Object.entries(request.params)){const input=$('model-params').querySelector(`[data-param="${key}"]`);if(input){if(input.type==='checkbox')input.checked=value;else input.value=value;}}
+  preprocessingWorkspace?.setConfig(request);validationWorkspace?.setConfig(request);beginnerControls?.setParams?.(request.params);
   $('train-share').value=Math.round(request.split.train*100);$('val-share').value=Math.round(request.split.validation*100);updateSplit();$('shuffle').checked=request.split.shuffle;$('scale').checked=request.preprocessing.scale;$('impute').checked=request.preprocessing.impute;$('degree').value=request.preprocessing.degree;$('epochs').value=request.epochs;$('cv').value=request.cv;$('seed').value=request.seed;$('custom-metric').value=request.custom_metric||'';$('path-enabled').checked=request.regularization_path??true;$('learning-curve').checked=!!request.learning_curve;$('permutation-importance').checked=!!request.permutation_importance;$('metric-quantile').value=request.metric_params?.quantile??.5;$('metric-power').value=request.metric_params?.power??1.5;$('metric-options').querySelectorAll('input').forEach(input=>input.checked=request.metrics.includes(input.value));
 }
 function updateSplit() {const train=Number($('train-share').value),val=Number($('val-share').value);$('test-share').textContent=number(100-train-val);document.querySelector('.split-bar .train').style.width=`${train}%`;document.querySelector('.split-bar .validation').style.width=`${val}%`;document.querySelector('.split-bar .test').style.width=`${100-train-val}%`;}
 
 async function initialize() {
   state.catalogue=await api('/catalogue');
+  help=installHelp(document,{openLesson,getModel:selectedModel});
+  datasetWorkspace=new DatasetWorkspace({api,onSelect:(dataset,options={})=>{if(state.busy)throw new Error('Сначала остановите текущий расчет.');setDataset(dataset);if(options.intent==='train')switchView('lab');toast('Набор выбран. Исследуйте данные или переходите в лабораторию.');},onCreated:dataset=>{setDataset(dataset);toast('Набор сохранен в библиотеке.');},onEdit:point=>{if(state.busy)throw new Error('Сначала остановите текущий расчет.');if(point.dataset&&point.dataset.id!==state.dataset?.id)setDataset(point.dataset);return openDataEditor(point.index??point.originalIndex);},onHelp:openLesson,onDeleted:clearDataset,onError:error=>toast(error.message||String(error))});
+  datasetWorkspace.mount($('dataset-workspace'));datasetWorkspace.setCatalogue(state.catalogue);
+  preprocessingWorkspace=new PreprocessingWorkspace({api,getRequest:requestFor,onChange:scheduleFit,onError:error=>toast(error.message||String(error)),openLesson});
+  preprocessingWorkspace.mount($('preprocessing-workspace'));
+  validationWorkspace=new ValidationWorkspace({getRequest:requestFor,onChange:scheduleFit,onSearch:runSearch,onError:error=>toast(error.message||String(error)),openLesson});
+  validationWorkspace.mount($('validation-workspace'));validationWorkspace.setCatalogue(state.catalogue);
+  $('parameter-mode').onchange=updateParameterMode;
   $('model').innerHTML=state.catalogue.models.map(model=>`<option value="${esc(model.id)}">${esc(model.name)}</option>`).join('');$('model').value='ridge';showModelParameters();
   $('metric-options').innerHTML=state.catalogue.metrics.filter(metric=>metric.id!=='custom').map(metric=>`<label class="check" title="${esc(typeof metric.help==='string'?metric.help:metric.description)}"><input type="checkbox" value="${esc(metric.id)}" ${['mse','rmse','mae','r2'].includes(metric.id)?'checked':''}>${esc(metric.name)}</label>`).join('');
   $('ranking-metric').innerHTML=state.catalogue.metrics.map(metric=>`<option value="${esc(metric.id)}">${esc(metric.name)}</option>`).join('')+(state.catalogue.metrics.some(metric=>metric.id==='custom')?'':'<option value="custom">Своя формула</option>');$('ranking-metric').value='rmse';
-  renderCatalogue();renderModels();renderLearning();
+  renderCatalogue();renderModels();renderLearning();help.refresh(document);
   document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>switchView(button.dataset.view));
-  document.querySelectorAll('[data-charts]').forEach(button=>button.onclick=safely(async()=>{state.chartTab=button.dataset.charts;document.querySelectorAll('.chart-tab').forEach(tab=>tab.classList.toggle('active',tab===button));await renderCharts();}));
+  document.querySelectorAll('[data-charts]').forEach(button=>button.onclick=safely(async()=>{state.chartTab=button.dataset.charts;document.querySelectorAll('.chart-tab').forEach(tab=>{tab.classList.toggle('active',tab===button);tab.setAttribute('aria-pressed',String(tab===button));});await renderCharts();}));
   ['n-samples','n-features','noise','correlation','outliers','sparsity','scale-spread'].forEach(id=>$(id).oninput=()=>$(id+'-value').value=$(id).value);
   $('generate').onclick=safely(async()=>{await loadData(generatedSpec());await runModel();});
   $('browse-data').onclick=()=>switchView('data');$('models-compare').onclick=()=>{switchView('lab');$('compare').scrollIntoView({behavior:'smooth',block:'center'});};
+  $('create-data-wizard').onclick=()=>{switchView('data');datasetWorkspace.switchTab('create');};
   $('dataset-search').oninput=renderCatalogue;$('dataset-filter').onchange=renderCatalogue;$('model-search').oninput=renderModels;
-  $('model').onchange=()=>{showModelParameters();scheduleFit();};$('target').onchange=()=>{refreshFeatures();scheduleFit();};
+  $('model').onchange=()=>{showModelParameters();scheduleFit();};$('target').onchange=()=>{refreshFeatures();datasetWorkspace?.setTarget?.($('target').value);scheduleFit();};
   ['scale','impute','degree','shuffle','cv','epochs'].forEach(id=>$(id).onchange=scheduleFit);
   ['train-share','val-share'].forEach(id=>$(id).onchange=()=>{updateSplit();scheduleFit();});
   $('run').onclick=safely(runModel);$('cancel').onclick=safely(async()=>{if(state.job)await api(`/jobs/${state.job}`,{method:'DELETE'});});
@@ -279,7 +355,7 @@ async function initialize() {
   $('play').onclick=play;$('timeline').oninput=safely(async()=>{stopPlayback();await showFrame(Number($('timeline').value));});$('step-back').onclick=safely(async()=>{stopPlayback();await showFrame(state.frame-1);});$('step-forward').onclick=safely(async()=>{stopPlayback();await showFrame(state.frame+1);});
   $('x-feature').onchange=safely(changeAxes);$('y-feature').onchange=safely(changeAxes);
   $('edit-points').onchange=safely(renderCharts);
-  $('theme').onclick=safely(async()=>{document.body.dataset.theme=document.body.dataset.theme==='dark'?'light':'dark';localStorage.setItem('linear-lab-theme',document.body.dataset.theme);await renderCharts();});
+  $('theme').onclick=safely(async()=>{document.body.dataset.theme=document.body.dataset.theme==='dark'?'light':'dark';localStorage.setItem('linear-lab-theme',document.body.dataset.theme);await Promise.all([datasetWorkspace?.refreshTheme?.(),preprocessingWorkspace?.refreshTheme?.(),validationWorkspace?.refreshTheme?.(),renderCharts()]);});
   $('compare').onclick=safely(()=>compareModels(false));$('tune').onclick=safely(()=>compareModels(true));$('ranking-metric').onchange=comparisonTable;$('ranking-direction').onchange=comparisonTable;
   $('edit-data').onclick=safely(()=>openDataEditor());$('close-data').onclick=()=>$('data-dialog').close();$('apply-data').onclick=safely(applyData);
   $('add-row').onclick=()=>{const editor=state.editor,row={};editor.columns.forEach(column=>{const name=typeof column==='string'?column:column.name;row[name]=editor.rows.at(-1)?.[name]??0;});editor.additions.push(row);renderEditor();$('data-editor').scrollTop=$('data-editor').scrollHeight;};
@@ -287,7 +363,7 @@ async function initialize() {
   $('openml-load').onclick=safely(async()=>{const id=Number($('openml-id').value);if(!id)throw new Error('Введите числовой идентификатор OpenML.');$('openml-load').disabled=true;try{await loadData({kind:'openml',name:'fetch_openml',params:{data_id:id}});switchView('lab');}finally{$('openml-load').disabled=false;}});
   $('save').onclick=()=>{if(!state.result||!state.job){toast('Сначала обучите модель.');return;}$('experiment-name').value=`${state.result.model_name||selectedModel().name} · ${state.dataset.name}`;$('save-dialog').showModal();};$('close-save').onclick=()=>$('save-dialog').close();
   $('confirm-save').onclick=safely(async()=>{await api('/experiments',{method:'POST',body:{job_id:state.job,name:$('experiment-name').value}});$('save-dialog').close();toast('Эксперимент сохранен вместе с настройками и результатами.');});
-  $('export').onchange=()=>{const format=$('export').value;if(format&&state.job){const a=document.createElement('a');a.href=`/api/jobs/${state.job}/export?format=${format}`;a.download='';a.click();}else if(format)toast('Сначала обучите модель.');$('export').value='';};
+  $('export').onchange=safely(async()=>{const format=$('export').value;try{if(!format)return;if(!state.job)throw new Error('Сначала обучите модель.');const response=await fetch(`/api/jobs/${state.job}/export?format=${format}`);if(!response.ok){const error=await response.json();throw new Error(error.detail||'Ошибка экспорта.');}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)/)?.[1]||`linear-model.${format}`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}finally{$('export').value='';}});
   $('reveal-test').onclick=safely(async()=>{if(!state.job)throw new Error('Сначала обучите модель.');const job=await api(`/jobs/${state.job}/reveal-test`,{method:'POST',body:{}});state.revealed=true;await setResult(job.result);toast('Итоговая проверка открыта. Следующее обучение снова скроет ее.');});
   $('predict').onclick=safely(async()=>{if(!state.job)throw new Error('Сначала обучите модель.');const row={};$('prediction-inputs').querySelectorAll('input').forEach(input=>row[input.dataset.predict]=input.type==='number'?Number(input.value):input.value);const result=await api('/predict',{method:'POST',body:{job_id:state.job,rows:[row]}});$('prediction-result').value=number(result.predictions[0]);});
   document.addEventListener('keydown',safely(async event=>{if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();if(!state.busy)await runModel();}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();$('save').click();}if(event.key===' '&&state.view==='lab'&&!['INPUT','SELECT','TEXTAREA','BUTTON'].includes(event.target.tagName)){event.preventDefault();play();}}));

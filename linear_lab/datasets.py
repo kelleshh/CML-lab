@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from io import BytesIO, StringIO
 import inspect
 import json
@@ -27,6 +28,8 @@ MAX_COLUMNS = 1_000
 MAX_CELLS = 5_000_000
 MAX_CATEGORIES = 512
 _ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
+TASK_LABELS = {"regression": "Регрессия: предсказать число", "classification": "Классификация: предсказать класс", "clustering": "Кластеризация: найти группы", "time_series": "Временные ряды: учитывать порядок во времени", "other": "Другая задача / задача ещё не выбрана"}
+_METADATA_FIELDS = {"name", "description", "tags", "task", "default_target", "task_target"}
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,10 @@ _KNOWN = {
 }
 _MAKE_SUPPORTED = {"make_regression", "make_friedman1", "make_friedman2", "make_friedman3", "make_sparse_uncorrelated", "make_low_rank_matrix", "make_classification", "make_blobs", "make_circles", "make_moons", "make_gaussian_quantiles"}
 _MAKE_REGRESSION = {"make_regression", "make_friedman1", "make_friedman2", "make_friedman3", "make_sparse_uncorrelated"}
+_MAKE_MATRIX = {"make_low_rank_matrix", "make_spd_matrix", "make_sparse_spd_matrix", "make_sparse_coded_signal"}
+_MAKE_MANIFOLD = {"make_s_curve", "make_swiss_roll"}
+_MAKE_BICLUSTER = {"make_biclusters", "make_checkerboard"}
+_MAKE_CLUSTER_CLASSIFICATION = {"make_blobs", "make_moons", "make_circles"}
 _GENERATOR_PARAMS = [
     {"key": "n_samples", "label": "Наблюдений", "type": "int", "default": 180, "min": 12, "max": 10000, "step": 12, "help": "Каждая строка — одно наблюдение."},
     {"key": "n_features", "label": "Признаков", "type": "int", "default": 2, "min": 1, "max": 100, "step": 1, "help": "Столбцы, на основе которых модель предсказывает цель."},
@@ -111,13 +118,21 @@ class DataService:
             if not callable(loader):
                 continue
             if name.startswith("make_"):
-                task = "regression" if name in _MAKE_REGRESSION else "classification" if name != "make_low_rank_matrix" else "matrix"
+                task = "regression" if name in _MAKE_REGRESSION else "matrix" if name in _MAKE_MATRIX else "other" if name in _MAKE_MANIFOLD else "clustering" if name in _MAKE_BICLUSTER else "classification"
                 supported = name in _MAKE_SUPPORTED
                 label = name
                 description = "Генератор scikit-learn. " + ("Можно выбрать числовую цель из столбцов." if supported else "Структура результата требует отдельного адаптера; доступен в каталоге для ознакомления.")
             else:
                 task, supported, label, description = _KNOWN.get(name, ("other", False, name, "Для этого формата пока нет безопасного табличного адаптера."))
             entries.append({"id": name, "name": name, "label": label, "kind": "synthetic" if name.startswith("make_") else "fetch" if name.startswith("fetch_") else "builtin", "task": task, "supported": supported, "requires_network": name.startswith("fetch_"), "description": description, "reason": None if supported else description, "source": f"https://scikit-learn.org/stable/modules/generated/sklearn.datasets.{name}.html", "params": _GENERATOR_PARAMS if name.startswith("make_") else []})
+        for entry in entries:
+            original_task = entry["task"]
+            entry["modality"] = "matrix" if entry["name"] in _MAKE_BICLUSTER else original_task if original_task in {"image", "text", "spatial", "sparse", "matrix"} else "tabular"
+            entry["task"] = self._task(entry["name"], original_task)
+            entry["task_label"] = TASK_LABELS[entry["task"]]
+            entry["tasks"] = [entry["task"]]
+            if entry["name"] in _MAKE_CLUSTER_CLASSIFICATION:
+                entry["tasks"] = ["clustering", "classification"]
         return entries
 
     def load(self, spec: dict[str, Any]) -> dict[str, Any]:
@@ -181,6 +196,142 @@ class DataService:
     def describe(self, dataset_id: str) -> dict[str, Any]:
         return self._read(dataset_id)[1]
 
+    def list_library(self, query: str = "", task: str | None = None, tags: list[str] | None = None, source: str | None = None, offset: int = 0, limit: int = 200) -> dict[str, Any]:
+        """Browse durable datasets without materializing every stored table.
+
+        Filters combine with AND; text searches name, description and tags. Tags
+        require every requested tag. A metadata sidecar keeps new-library reads
+        proportional to their descriptions rather than to the number of cells.
+        """
+        if not isinstance(query, str) or len(query) > 500:
+            raise ValueError("Поисковая строка должна быть текстом не длиннее 500 символов.")
+        if task is not None and (not isinstance(task, str) or task not in TASK_LABELS):
+            raise ValueError("Неизвестная задача машинного обучения.")
+        wanted_tags = self._tags(tags or [])
+        if source is not None and (not isinstance(source, str) or len(source) > 100):
+            raise ValueError("Источник должен быть текстом не длиннее 100 символов.")
+        offset = self._number({"offset": offset}, "offset", 0, 0, 100000, True)
+        limit = self._number({"limit": limit}, "limit", 200, 1, 500, True)
+        needle = query.strip().casefold()
+        items: list[dict[str, Any]] = []
+        for path in self.root.glob("*.json"):
+            dataset_id = path.stem
+            if not _ID_PATTERN.fullmatch(dataset_id):
+                continue
+            sidecar = self.root / f"{dataset_id}.meta.json"
+            if sidecar.is_file():
+                try:
+                    metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    metadata = self.describe(dataset_id)
+            else:
+                metadata = self.describe(dataset_id)
+            if metadata.get("loader") == "fetch_openml":
+                metadata["source"] = "openml"
+            if task and task not in metadata.get("tasks", [metadata.get("task")]):
+                continue
+            if source and metadata.get("source") != source:
+                continue
+            if wanted_tags and not set(wanted_tags).issubset(metadata.get("tags", [])):
+                continue
+            haystack = " ".join([str(metadata.get("name", "")), str(metadata.get("description", "")), *metadata.get("tags", [])]).casefold()
+            if needle and needle not in haystack:
+                continue
+            item = {key: value for key, value in metadata.items() if key not in {"preview", "source_description", "true_coefficients", "outlier_indices"}}
+            item["created_at"] = metadata.get("created_at") or datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
+            items.append(item)
+        items.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
+        return {"items": items[offset:offset + limit], "total": len(items), "offset": offset, "limit": limit, "tasks": [{"id": key, "label": label} for key, label in TASK_LABELS.items()]}
+
+    def update_metadata(self, dataset_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        """Create a labelled snapshot; data and description of the parent survive."""
+        if not isinstance(patch, dict) or not patch or set(patch) - _METADATA_FIELDS:
+            raise ValueError("Разрешены поля name, description, tags, task, default_target и task_target.")
+        frame, metadata = self._read(dataset_id)
+        details = self._details(metadata)
+        name = patch.get("name", metadata["name"])
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 200:
+            raise ValueError("Название должно содержать от 1 до 200 символов.")
+        if "description" in patch:
+            description = patch["description"]
+            if not isinstance(description, str) or len(description) > 5000:
+                raise ValueError("Описание должно быть текстом не длиннее 5000 символов.")
+            details["description"] = description.strip()
+        if "tags" in patch:
+            details["tags"] = self._tags(patch["tags"])
+        if "task" in patch:
+            if not isinstance(patch["task"], str) or patch["task"] not in TASK_LABELS:
+                raise ValueError("Неизвестная задача машинного обучения.")
+            details["task"] = patch["task"]
+            details["tasks"] = [patch["task"]]
+        default_target = patch.get("default_target", metadata.get("default_target"))
+        if default_target is not None and (not isinstance(default_target, str) or default_target not in metadata["targets"]):
+            raise ValueError("Цель регрессии должна быть числовой колонкой из набора.")
+        if "task_target" in patch:
+            target = patch["task_target"]
+            if target is not None and (not isinstance(target, str) or target not in frame.columns):
+                raise ValueError("Целевой столбец задачи отсутствует в наборе.")
+            details["task_target"] = target
+        elif "default_target" in patch and details.get("task") == "regression":
+            details["task_target"] = default_target
+        details.update(parent_id=dataset_id, edited=True, edit_summary={"metadata": sorted(patch)})
+        return self._store(frame, name.strip(), default_target, details)
+
+    def delete(self, dataset_id: str) -> dict[str, Any]:
+        """Remove exactly one library snapshot; relatives and cache stay intact."""
+        self._read(dataset_id)
+        (self.root / f"{dataset_id}.json").unlink()
+        (self.root / f"{dataset_id}.meta.json").unlink(missing_ok=True)
+        return {"id": dataset_id, "deleted": True}
+
+    def export_csv(self, dataset_id: str) -> bytes:
+        """Export original values, including categorical columns and missing cells."""
+        frame, _ = self._read(dataset_id)
+        return frame.to_csv(index=False, lineterminator="\n").encode("utf-8-sig")
+
+    def read_column(self, dataset_id: str, column: str) -> pd.Series:
+        """Read an original column without requiring it to be a model feature."""
+        frame, _ = self._read(dataset_id)
+        if not isinstance(column, str) or column not in frame.columns:
+            raise ValueError("Колонка отсутствует в наборе данных.")
+        return frame[column].copy()
+
+    def explore(self, dataset_id: str, x: str | None = None, y: str | None = None, z: str | None = None, color: str | None = None, target: str | None = None, sample_size: int = 2000, seed: int = 42) -> dict[str, Any]:
+        """Inspect raw observations before fitting any estimator or preprocessing.
+
+        Points are sampled reproducibly; profiles and correlations use all rows.
+        Missing coordinates remain null, so the renderer can explicitly drop them.
+        Categorical colour codes retain the full-dataset category mapping.
+        """
+        frame, metadata = self._read(dataset_id)
+        sample_size = self._number({"sample_size": sample_size}, "sample_size", 2000, 3, 2000, True)
+        seed = self._number({"seed": seed}, "seed", 42, 0, 2**32 - 1, True)
+        numeric_columns = [item["name"] for item in metadata["columns"] if item["numeric"]]
+        target = target if target is not None else metadata.get("task_target") or metadata.get("default_target")
+        x = x or next((column for column in numeric_columns if column != target), frame.columns[0])
+        y = y or target or next((column for column in numeric_columns if column != x), frame.columns[1])
+        for name, column in {"x": x, "y": y, "z": z, "color": color, "target": target}.items():
+            if column is not None and (not isinstance(column, str) or column not in frame.columns):
+                raise ValueError(f"Колонка {name} отсутствует в наборе данных.")
+        indices = np.arange(len(frame)) if len(frame) <= sample_size else np.sort(np.random.default_rng(seed).choice(len(frame), sample_size, replace=False))
+        selected = list(dict.fromkeys(column for column in [x, y, z, color, target] if column is not None))
+        sampled = frame.iloc[indices]
+        values = json.loads(sampled[selected].to_json(orient="values", date_format="iso", double_precision=15))
+        serialised = {column: [row[position] for row in values] for position, column in enumerate(selected)}
+        points: dict[str, Any] = {"indices": indices.tolist(), "x": serialised[x], "y": serialised[y], "z": serialised[z] if z else None, "color": serialised[color] if color else None, "color_kind": "numeric" if color and self._numeric(frame[color]) else "categorical" if color else None, "color_categories": [], "color_codes": None}
+        if color and not self._numeric(frame[color]):
+            categories = sorted(str(value) for value in frame[color].dropna().unique())
+            mapping = {value: index for index, value in enumerate(categories)}
+            points["color_categories"] = categories
+            points["color_codes"] = [mapping.get(str(value)) if pd.notna(value) else None for value in sampled[color]]
+        histogram_columns = list(dict.fromkeys(selected + numeric_columns[:6]))[:12]
+        histograms = {column: self._histogram(frame[column]) for column in histogram_columns}
+        correlation_columns = list(dict.fromkeys([column for column in selected if self._numeric(frame[column])] + numeric_columns))[:50]
+        correlation_frame = frame[correlation_columns].corr()
+        correlation = {"columns": correlation_columns, "values": json.loads(correlation_frame.to_json(orient="values", double_precision=15)), "rows": len(frame), "truncated": len(numeric_columns) > 50, "method": "pearson_pairwise_complete"}
+        profile = {"stats": metadata["stats"], "columns": [{**item, **self._column_profile(frame[item["name"]])} for item in metadata["columns"]], "target": target, "target_profile": self._column_profile(frame[target]) if target else None, "computed_on": "all_rows"}
+        return {"id": dataset_id, "metadata": metadata, "axes": {"x": x, "y": y, "z": z, "color": color, "target": target}, "columns": metadata["columns"], "points": points, "data": serialised, "sample_rows": len(indices), "total_rows": len(frame), "sampled": len(indices) < len(frame), "histograms": histograms, "correlation": correlation, "profile": profile}
+
     def rows(self, dataset_id: str, offset: int = 0, limit: int = 500) -> dict[str, Any]:
         """Return a bounded original-data viewport with stable zero-based indices."""
         offset = self._number({"offset": offset}, "offset", 0, 0, MAX_ROWS, True)
@@ -239,7 +390,7 @@ class DataService:
             edited = pd.concat([edited, pd.DataFrame(additions, columns=frame.columns)], ignore_index=True)
         if not changes and not additions and not deleted:
             raise ValueError("Нет изменений для сохранения.")
-        details = {key: value for key, value in meta.items() if key not in {"id", "name", "rows", "columns", "column_names", "preview", "targets", "default_target", "feature_names"}}
+        details = self._details(meta)
         details["parent_id"] = dataset_id
         details["edited"] = True
         details["edit_summary"] = {"changed": len(changes), "added": len(additions), "deleted": len(deleted)}
@@ -280,6 +431,65 @@ class DataService:
     def _numeric(series: pd.Series) -> bool:
         return bool(is_numeric_dtype(series.dtype) and not is_bool_dtype(series.dtype))
 
+    @staticmethod
+    def _task(name: str, task: str) -> str:
+        if name == "make_blobs":
+            return "clustering"
+        if name in {"load_digits", "fetch_20newsgroups", "fetch_20newsgroups_vectorized", "fetch_rcv1", "load_files", "fetch_lfw_people", "fetch_lfw_pairs", "fetch_olivetti_faces"}:
+            return "classification"
+        return task if task in TASK_LABELS else "other"
+
+    @staticmethod
+    def _tags(tags: Any) -> list[str]:
+        if not isinstance(tags, list) or len(tags) > 30 or not all(isinstance(tag, str) and 0 < len(tag.strip()) <= 60 for tag in tags):
+            raise ValueError("Теги должны быть списком максимум из 30 непустых строк до 60 символов.")
+        return list(dict.fromkeys(tag.strip().casefold() for tag in tags))
+
+    @staticmethod
+    def _details(metadata: dict[str, Any]) -> dict[str, Any]:
+        derived = {"id", "name", "rows", "columns", "column_names", "preview", "targets", "default_target", "feature_names", "stats", "created_at", "task_label"}
+        return {key: value for key, value in metadata.items() if key not in derived}
+
+    @classmethod
+    def _column_profile(cls, series: pd.Series) -> dict[str, Any]:
+        present = series.dropna()
+        profile: dict[str, Any] = {"count": len(present), "missing": int(series.isna().sum()), "unique": int(series.nunique(dropna=True))}
+        if cls._numeric(series):
+            if present.empty:
+                return {**profile, "kind": "numeric", "min": None, "max": None, "mean": None, "std": None, "quantiles": {key: None for key in ["q05", "q25", "q50", "q75", "q95"]}}
+            quantiles = present.quantile([0.05, 0.25, 0.5, 0.75, 0.95]).to_numpy(dtype=float)
+            finite = lambda value: float(value) if math.isfinite(float(value)) else None
+            return {**profile, "kind": "numeric", "min": finite(present.min()), "max": finite(present.max()), "mean": finite(present.mean()), "std": finite(present.std(ddof=0)), "quantiles": dict(zip(["q05", "q25", "q50", "q75", "q95"], [finite(value) for value in quantiles]))}
+        counts = present.astype(str).value_counts().head(20)
+        return {**profile, "kind": "categorical", "top_values": [{"value": str(value), "count": int(count)} for value, count in counts.items()], "truncated": series.nunique(dropna=True) > 20}
+
+    @classmethod
+    def _histogram(cls, series: pd.Series) -> dict[str, Any]:
+        present = series.dropna()
+        missing = int(series.isna().sum())
+        if cls._numeric(series):
+            if present.empty:
+                return {"kind": "numeric", "edges": [], "counts": [], "missing": missing, "rows": len(series)}
+            values = present.to_numpy(dtype=float)
+            if np.all(values == values[0]):
+                counts, edges = np.asarray([len(values)]), np.asarray([values[0], values[0]])
+            else:
+                scale = float(np.max(np.abs(values)))
+                counts, edges = np.histogram(values / scale, bins=min(30, max(1, int(math.ceil(math.sqrt(len(present)))))))
+                edges = edges * scale
+            return {"kind": "numeric", "edges": edges.tolist(), "counts": counts.tolist(), "missing": missing, "rows": len(series)}
+        counts = present.astype(str).value_counts()
+        top = counts.head(30)
+        return {"kind": "categorical", "labels": [str(label) for label in top.index], "counts": [int(count) for count in top], "other_count": int(counts.iloc[30:].sum()), "missing": missing, "rows": len(series)}
+
+    @classmethod
+    def _metadata_stats(cls, frame: pd.DataFrame, metadata: dict[str, Any]) -> dict[str, Any]:
+        numeric_count = sum(cls._numeric(frame[column]) for column in frame)
+        missing = int(frame.isna().to_numpy().sum())
+        target = metadata.get("task_target") or metadata.get("default_target")
+        target_profile = cls._column_profile(frame[target]) if target in frame else None
+        return {"rows": len(frame), "columns": len(frame.columns), "numeric_columns": numeric_count, "categorical_columns": len(frame.columns) - numeric_count, "missing_cells": missing, "missing_fraction": missing / frame.size, "memory_bytes": int(frame.memory_usage(index=True, deep=True).sum()), "target": target, "target_quantiles": target_profile.get("quantiles") if target_profile else None, "target_unique": target_profile.get("unique") if target_profile else None}
+
     def _read(self, dataset_id: str) -> tuple[pd.DataFrame, dict[str, Any]]:
         if not isinstance(dataset_id, str) or not _ID_PATTERN.fullmatch(dataset_id):
             raise ValueError("Некорректный идентификатор набора данных.")
@@ -296,7 +506,20 @@ class DataService:
                 frame[item["name"]] = frame[item["name"]].astype(bool)
             else:
                 frame[item["name"]] = frame[item["name"]].map(lambda value: None if pd.isna(value) else str(value)).astype(object)
-        return frame, saved["metadata"]
+        metadata = saved["metadata"]
+        if metadata.get("loader") == "fetch_openml":
+            metadata["source"] = "openml"
+        # Existing v1 datasets remain readable and acquire the new catalogue fields.
+        if "stats" not in metadata:
+            original_task = metadata.get("task", "regression" if metadata.get("default_target") else "other")
+            metadata["modality"] = original_task if original_task in {"image", "text", "spatial", "sparse", "matrix"} else "tabular"
+            metadata["task"] = self._task(metadata.get("generator", metadata.get("loader", "")), original_task)
+            metadata["task_label"] = TASK_LABELS[metadata["task"]]
+            metadata["tasks"] = [metadata["task"]]
+            metadata.setdefault("tags", [])
+            metadata.setdefault("task_target", metadata.get("default_target") or next((column for column in metadata.get("excluded_targets", []) if column in frame), None))
+            metadata["stats"] = self._metadata_stats(frame, metadata)
+        return frame, metadata
 
     def _store(self, frame: pd.DataFrame, name: str, default_target: str | None, details: dict[str, Any]) -> dict[str, Any]:
         frame = self._validate_frame(frame)
@@ -317,13 +540,27 @@ class DataService:
         records = json.loads(frame.to_json(orient="values", date_format="iso", double_precision=15))
         columns = [{"name": column, "dtype": str(frame[column].dtype), "numeric": self._numeric(frame[column]), "missing": int(frame[column].isna().sum()), "unique": int(frame[column].nunique(dropna=True))} for column in frame.columns]
         metadata = {**details, "id": dataset_id, "name": str(name)[:200], "rows": len(frame), "columns": columns, "column_names": list(frame.columns), "preview": [dict(zip(frame.columns, row)) for row in records[:100]], "targets": targets, "default_target": default_target, "feature_names": [column for column in frame.columns if column != default_target and column not in details.get("excluded_features", [])], "warnings": warnings}
+        original_task = details.get("task", "regression" if default_target else "other")
+        metadata["modality"] = details.get("modality", original_task if original_task in {"image", "text", "spatial", "sparse", "matrix"} else "tabular")
+        metadata["task"] = original_task if "tasks" in details and original_task in TASK_LABELS else self._task(details.get("generator", details.get("loader", "")), original_task)
+        metadata["task_label"] = TASK_LABELS[metadata["task"]]
+        metadata["tasks"] = details.get("tasks", ["clustering", "classification"] if details.get("generator") in _MAKE_CLUSTER_CLASSIFICATION else [metadata["task"]])
+        metadata["tags"] = self._tags(details.get("tags", []))
+        metadata["task_target"] = details.get("task_target", default_target or next((column for column in details.get("excluded_targets", []) if column in frame), None))
+        metadata["created_at"] = datetime.now(timezone.utc).isoformat()
+        metadata["stats"] = self._metadata_stats(frame, metadata)
         payload = {"metadata": metadata, "data": records}
         temp = self.root / f"{dataset_id}.tmp"
+        metadata_temp = self.root / f"{dataset_id}.meta.tmp"
         try:
             temp.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False), encoding="utf-8")
             temp.replace(self.root / f"{dataset_id}.json")
+            library_metadata = {key: value for key, value in metadata.items() if key not in {"preview", "source_description", "true_coefficients", "outlier_indices"}}
+            metadata_temp.write_text(json.dumps(library_metadata, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+            metadata_temp.replace(self.root / f"{dataset_id}.meta.json")
         finally:
             temp.unlink(missing_ok=True)
+            metadata_temp.unlink(missing_ok=True)
         return metadata
 
     @staticmethod
@@ -592,8 +829,8 @@ class DataService:
             warnings.append(f"Из {original_rows} строк взята воспроизводимая случайная выборка {len(frame)} строк.")
         if not regression:
             warnings.append("Это набор классификации или другого назначения. Выберите числовую колонку измерений; метка класса не выбирается автоматически.")
-        meta = {"source": "sklearn", "loader": loader_name, "task": task, "description": description, "source_description": str(bunch.get("DESCR", ""))[:20000], "excluded_targets": [] if regression else target_columns, "excluded_features": target_columns, "original_rows": original_rows, "warnings": warnings, "source_url": f"https://scikit-learn.org/stable/modules/generated/sklearn.datasets.{loader_name}.html"}
+        meta = {"source": "openml" if loader_name == "fetch_openml" else "sklearn", "loader": loader_name, "task": task, "description": description, "source_description": str(bunch.get("DESCR", ""))[:20000], "excluded_targets": [] if regression else target_columns, "excluded_features": target_columns, "original_rows": original_rows, "warnings": warnings, "source_url": f"https://scikit-learn.org/stable/modules/generated/sklearn.datasets.{loader_name}.html"}
         if loader_name == "fetch_openml":
-            meta["openml"] = {key: value for key, value in (bunch.get("details") or {}).items() if key in {"id", "name", "version", "description", "url"}}
+            meta["openml"] = {key: value for key, value in (bunch.get("details") or {}).items() if key in {"id", "name", "version", "description", "url", "licence", "creator", "contributor", "citation", "default_target_attribute"}}
             label = "OpenML: " + str((bunch.get("details") or {}).get("name", "набор"))
         return self._store(frame, label, target_columns[0] if regression and target_columns else None, meta)
